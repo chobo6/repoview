@@ -36,3 +36,9 @@ CODE_EXTENSIONS: dict[str, str] = {
 
 # primary_language 집계에서 제외할 언어 (설정/문서 파일이 본체 언어를 가리는 것 방지)
 NON_SOURCE_LANGUAGES = {"json", "yaml", "markdown", "xml", "css", "html"}
+
+CHUNK_LINES = 50
+CHUNK_OVERLAP = 10
+EMBEDDING_MODEL = os.getenv("REPOVIEW_EMBEDDING_MODEL", "text-embedding-3-small")
+DEFAULT_TOP_K = 5
+CHROMA_PATH = Path(os.getenv("REPOVIEW_CHROMA_PATH") or PROJECT_ROOT / "chroma_data")

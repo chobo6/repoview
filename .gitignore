@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 .env
 repoview.db
+chroma_data/
 node_modules/
 dist/
 .pytest_cache/
