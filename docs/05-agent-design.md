@@ -5,8 +5,8 @@
 | 도구 | 인자 | 반환 |
 |---|---|---|
 | `list_directory` | `path` | 해당 디렉토리 하위 목록 |
-| `search_code` | `pattern`, `path_glob?`, `max_results?` | 파일:라인 + 매칭 라인 컨텍스트 (ripgrep) |
-| `search_semantic` | `query`, `top_k?` | 유사 코드 청크 + 파일:라인 (Chroma, Phase 3부터) |
+| `search_code` | `pattern`, `path_glob?`, `max_results?` | 파일:라인 + 매칭 라인 컨텍스트 (순수 Python 정규식) |
+| `search_semantic` | `query`, `top_k?`(기본 5) | 유사 코드 청크 + 파일:라인 (Chroma, Phase 3부터) |
 | `read_file` | `path`, `start_line?`, `end_line?` | 파일 내용 (기본 최대 200줄) |
 
 ### `get_repo_overview`를 도구에서 뺀 이유
@@ -18,6 +18,12 @@
 ### 도구 인자는 신뢰 경계
 
 모든 도구의 `path` 인자는 LLM이 생성한다. 각 도구는 인자를 레포 루트 기준으로 resolve한 뒤 루트 밖을 벗어나면 거부한다(`../../etc/passwd` 류 차단).
+
+### 검색 전략 안내 (Phase 3)
+
+`search_code`와 `search_semantic`은 역할이 다르다 — `search_code`는 정확한 용어(함수명·SQL 키워드 등)를 알 때, `search_semantic`은 개념은 있지만 정확한 이름을 모를 때 강하다. 모델 판단에만 맡기면 `search_semantic`을 아예 안 쓸 수 있고, PRD의 핵심 성공 기준인 "Phase 2→3 탐지율 개선"을 증명할 수 없게 된다. 그래서 시스템 프롬프트에 다음 지침을 명시한다.
+
+> "먼저 `search_code`로 찾아보고, 결과가 없거나 부족하면 `search_semantic`을 사용하세요."
 
 ## 2. 루프 구조
 
@@ -78,7 +84,8 @@ return partial_result(status="CAPPED")     # 상한 도달
 ```
 [역할]        코드 리뷰 에이전트. 주어진 도구로 근거를 직접 확인한 뒤 답한다.
 [레포 개요]   언어/프레임워크, depth 2 디렉토리 트리, 파일 수
-[도구 지침]   각 도구를 언제 쓰는지, read_file은 범위를 좁혀 호출할 것
+[도구 지침]   각 도구를 언제 쓰는지, read_file은 범위를 좁혀 호출할 것,
+              search_code 먼저 시도하고 부족하면 search_semantic 사용 (Phase 3부터)
 [인용 규칙]   파일:라인 근거 필수, 읽지 않은 파일 인용 금지, 모르면 모른다고 답할 것
 [출력 형식]   발견 항목별로 { 문제, 근거(파일:라인), 영향, 제안 }
 ──────────── 이 위까지 고정(캐싱 대상) ────────────
@@ -90,5 +97,5 @@ return partial_result(status="CAPPED")     # 상한 도달
 | Phase | 에이전트 상태 |
 |---|---|
 | 2 | 도구 2개(`search_code`, `read_file`), 최대 3턴 |
-| 3 | `search_semantic` 추가 |
+| 3 | `search_semantic` 추가(top_k 기본 5), 시스템 프롬프트에 검색 전략 안내 추가 |
 | 4 | 전체 루프 + 3중 안전장치 + 반복 감지 + 인용 검증 + 트레이스/SSE |

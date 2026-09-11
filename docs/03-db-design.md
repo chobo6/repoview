@@ -117,9 +117,12 @@ CREATE TABLE eval_result (
 CREATE INDEX idx_eval_result_run ON eval_result(eval_run_id);
 ```
 
-## 4. 벡터 저장소 (Chroma, SQLite 외부)
+## 4. 벡터 저장소 (Chroma, SQLite 외부, Phase 3부터)
 
 - 레포별 컬렉션 1개 (`repo_localquest`, `repo_songpyeon`).
-- 문서 = 코드 청크 텍스트.
+- 문서 = 코드 청크 텍스트. `iter_code_files`가 반환하는 파일들을 50줄 단위, 10줄 겹침으로 슬라이딩 윈도우 청킹한다(설계 근거는 `02-architecture.md` 4절).
+- 임베딩 모델 = OpenAI `text-embedding-3-small`.
 - 메타데이터 = `{file_path, start_line, end_line, language}`.
 - `search_semantic` 도구가 이 메타데이터를 그대로 인용 근거(파일:라인)로 반환한다.
+- 재임베딩 시 컬렉션을 통째로 지우고 다시 채운다(증분 업데이트 없음 — 근거는 `02-architecture.md` 4절).
+- `repo.chunk_count`(1절 DDL에 이미 존재)를 `python -m repoview.embed` 실행 후 갱신해, 프론트에서 레포별 청크 수를 보여줄 수 있게 한다.
