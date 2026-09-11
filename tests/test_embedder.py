@@ -1,8 +1,9 @@
 from pathlib import Path
 
 import chromadb
+import pytest
 
-from repoview.embedder import chunk_file, chunk_repo, collection_name, embed_repo
+from repoview.embedder import MAX_CHUNK_CHARS, chunk_file, chunk_repo, collection_name, embed_repo
 from repoview.embedding_client import FakeEmbeddingClient
 from repoview.indexer import index_repo
 
@@ -111,7 +112,7 @@ def test_embed_repo_batches_embedding_calls(conn, mini_repo, tmp_path, monkeypat
     assert all(len(call) == 1 for call in embedder.embed_calls)
 
 
-def test_embed_repo_skips_oversized_chunks(conn, tmp_path):
+def test_embed_repo_truncates_oversized_chunks(conn, tmp_path):
     root = tmp_path / "huge_repo"
     root.mkdir()
     huge_line = "x" * 25_000
@@ -125,10 +126,34 @@ def test_embed_repo_skips_oversized_chunks(conn, tmp_path):
         conn, summary["repo_id"], "HugeFileRepo", root, FakeEmbeddingClient(), chroma_path
     )
 
-    # bundle.js's single ~75,000-char chunk exceeds MAX_CHUNK_CHARS and must be
-    # skipped; normal.py's tiny chunk must still be embedded.
-    assert result["chunk_count"] == 1
+    # Both files' chunks are kept (not dropped) -- the oversized one is
+    # truncated instead, so its citation (file:start-end) stays searchable.
+    assert result["chunk_count"] == 2
     client = chromadb.PersistentClient(path=str(chroma_path))
     collection = client.get_collection(name=collection_name("HugeFileRepo"))
     docs = collection.get()["documents"]
-    assert not any("xxxxx" in doc for doc in docs)
+    assert all(len(doc) <= MAX_CHUNK_CHARS for doc in docs)
+
+
+class _RaisingEmbeddingClient(FakeEmbeddingClient):
+    def embed(self, texts):
+        raise RuntimeError("임베딩 API 실패 시뮬레이션")
+
+
+def test_embed_repo_preserves_old_collection_on_mid_run_failure(conn, mini_repo, tmp_path):
+    summary = index_repo(conn, "MiniRepo", mini_repo)
+    chroma_path = tmp_path / "chroma"
+
+    first = embed_repo(
+        conn, summary["repo_id"], "MiniRepo", mini_repo, FakeEmbeddingClient(), chroma_path
+    )
+
+    with pytest.raises(RuntimeError):
+        embed_repo(
+            conn, summary["repo_id"], "MiniRepo", mini_repo, _RaisingEmbeddingClient(), chroma_path
+        )
+
+    # 실패했어도 기존(첫 번째) 컬렉션은 그대로 살아있어야 한다.
+    client = chromadb.PersistentClient(path=str(chroma_path))
+    collection = client.get_collection(name=collection_name("MiniRepo"))
+    assert collection.count() == first["chunk_count"]

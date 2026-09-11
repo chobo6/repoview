@@ -49,6 +49,12 @@ def chunk_repo(root: Path) -> list[dict]:
     return chunks
 
 
+def _cap_chunk_text(chunk: dict) -> dict:
+    if len(chunk["text"]) <= MAX_CHUNK_CHARS:
+        return chunk
+    return {**chunk, "text": chunk["text"][:MAX_CHUNK_CHARS]}
+
+
 def collection_name(repo_name: str) -> str:
     return f"repo_{repo_name.lower()}"
 
@@ -61,20 +67,22 @@ def embed_repo(
     embedding_client,
     chroma_path: Path,
 ) -> dict:
-    chunks = [c for c in chunk_repo(Path(root)) if len(c["text"]) <= MAX_CHUNK_CHARS]
+    chunks = [_cap_chunk_text(c) for c in chunk_repo(Path(root))]
 
     client = chromadb.PersistentClient(path=str(chroma_path))
     name_in_chroma = collection_name(name)
+    staging_name = f"{name_in_chroma}__staging"
+
     try:
-        client.delete_collection(name=name_in_chroma)
+        client.delete_collection(name=staging_name)
     except NotFoundError:
         pass
-    collection = client.create_collection(name=name_in_chroma)
+    staging = client.create_collection(name=staging_name)
 
     for batch in _batched_by_chars(chunks, EMBED_BATCH_CHAR_BUDGET):
         texts = [chunk["text"] for chunk in batch]
         embeddings = embedding_client.embed(texts)
-        collection.add(
+        staging.add(
             ids=[f"{c['file_path']}:{c['start_line']}-{c['end_line']}" for c in batch],
             documents=texts,
             metadatas=[
@@ -83,6 +91,14 @@ def embed_repo(
             ],
             embeddings=embeddings,
         )
+
+    # 모든 배치가 성공한 뒤에만 기존 컬렉션을 교체한다 — 중간에 실패하면
+    # 기존 컬렉션은 그대로 남아 검색 가능한 상태를 유지한다.
+    try:
+        client.delete_collection(name=name_in_chroma)
+    except NotFoundError:
+        pass
+    staging.modify(name=name_in_chroma)
 
     conn.execute("UPDATE repo SET chunk_count = ? WHERE id = ?", (len(chunks), repo_id))
     conn.commit()
