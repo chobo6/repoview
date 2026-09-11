@@ -41,6 +41,9 @@ def detect_frameworks(root: Path) -> list[str]:
             if depth + 1 > MANIFEST_MAX_DEPTH:
                 continue
             manifest = Path(dirpath) / filename
+            if manifest.is_symlink():
+                # 심볼릭 링크는 레포 루트 밖을 가리킬 수 있어 내용을 읽지 않는다.
+                continue
             text = manifest.read_text(encoding="utf-8", errors="replace")
             for marker_filename, marker, framework in FRAMEWORK_MARKERS:
                 if filename == marker_filename and marker in text and framework not in found:

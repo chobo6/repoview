@@ -39,3 +39,32 @@ def test_iter_code_files_includes_java_and_ts(mini_repo):
     names = {p.name for p in iter_code_files(mini_repo)}
     assert "UserService.java" in names
     assert "api.ts" in names
+
+
+def test_iter_code_files_skips_symlinks(mini_repo, monkeypatch):
+    from pathlib import Path
+
+    real_is_symlink = Path.is_symlink
+    monkeypatch.setattr(
+        Path,
+        "is_symlink",
+        lambda self: True if self.name == "UserService.java" else real_is_symlink(self),
+    )
+
+    names = {p.name for p in iter_code_files(mini_repo)}
+    assert "UserService.java" not in names
+    assert "api.ts" in names
+
+
+def test_search_skips_symlinked_files(mini_repo, monkeypatch):
+    from pathlib import Path
+
+    real_is_symlink = Path.is_symlink
+    monkeypatch.setattr(
+        Path,
+        "is_symlink",
+        lambda self: True if self.name == "UserService.java" else real_is_symlink(self),
+    )
+
+    result = search_code(mini_repo, "findAllWithOrders")
+    assert "UserService.java" not in result

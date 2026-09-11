@@ -22,6 +22,10 @@ def iter_code_files(repo_root: Path) -> Iterator[Path]:
             path = Path(dirpath) / filename
             if path.suffix.lower() not in CODE_EXTENSIONS:
                 continue
+            if path.is_symlink():
+                # 심볼릭 링크는 레포 루트 밖을 가리킬 수 있어 read_file의
+                # resolve_safe_path 방어를 거치지 않고 내용이 노출될 수 있다.
+                continue
             try:
                 if path.stat().st_size > MAX_INDEXED_FILE_BYTES:
                     continue

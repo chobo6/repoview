@@ -51,3 +51,16 @@ def test_records_line_counts(conn, mini_repo):
 
 def test_detect_frameworks_reads_pom(mini_repo):
     assert "spring-mvc" in detect_frameworks(mini_repo)
+
+
+def test_detect_frameworks_skips_symlinked_manifest(mini_repo, monkeypatch):
+    from pathlib import Path
+
+    real_is_symlink = Path.is_symlink
+    monkeypatch.setattr(
+        Path,
+        "is_symlink",
+        lambda self: True if self.name == "pom.xml" else real_is_symlink(self),
+    )
+
+    assert "spring-mvc" not in detect_frameworks(mini_repo)
