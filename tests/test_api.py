@@ -8,7 +8,10 @@ from repoview.indexer import index_repo
 
 
 @pytest.fixture
-def client(conn, mini_repo):
+def client(conn, mini_repo, monkeypatch, tmp_path):
+    import repoview.agent.loop as loop_module
+
+    monkeypatch.setattr(loop_module, "CHROMA_PATH", tmp_path / "chroma")
     index_repo(conn, "MiniRepo", mini_repo)
     app.dependency_overrides[get_db] = lambda: conn
     app.dependency_overrides[get_llm] = lambda: FakeLLM([make_text_response("리뷰 결과")])
@@ -57,7 +60,10 @@ def test_create_session_with_blank_question_returns_400(client):
     assert response.status_code == 400
 
 
-def test_get_session_includes_trace(conn, mini_repo):
+def test_get_session_includes_trace(conn, mini_repo, monkeypatch, tmp_path):
+    import repoview.agent.loop as loop_module
+
+    monkeypatch.setattr(loop_module, "CHROMA_PATH", tmp_path / "chroma")
     index_repo(conn, "MiniRepo", mini_repo)
     app.dependency_overrides[get_db] = lambda: conn
     app.dependency_overrides[get_llm] = lambda: FakeLLM([

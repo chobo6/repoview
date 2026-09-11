@@ -4,6 +4,7 @@ __pycache__/
 .env
 repoview.db
 chroma_data/
+repoview.egg-info/
 node_modules/
 dist/
 .pytest_cache/

@@ -101,7 +101,7 @@ def test_re_embed_replaces_collection_without_duplicating(conn, mini_repo, tmp_p
 def test_embed_repo_batches_embedding_calls(conn, mini_repo, tmp_path, monkeypatch):
     import repoview.embedder as embedder_module
 
-    monkeypatch.setattr(embedder_module, "EMBED_BATCH_SIZE", 1)
+    monkeypatch.setattr(embedder_module, "EMBED_BATCH_CHAR_BUDGET", 1)
     summary = index_repo(conn, "MiniRepo", mini_repo)
     embedder = FakeEmbeddingClient()
 
@@ -109,3 +109,26 @@ def test_embed_repo_batches_embedding_calls(conn, mini_repo, tmp_path, monkeypat
 
     assert len(embedder.embed_calls) == result["chunk_count"]
     assert all(len(call) == 1 for call in embedder.embed_calls)
+
+
+def test_embed_repo_skips_oversized_chunks(conn, tmp_path):
+    root = tmp_path / "huge_repo"
+    root.mkdir()
+    huge_line = "x" * 25_000
+    (root / "bundle.js").write_text("\n".join([huge_line] * 3), encoding="utf-8")
+    (root / "normal.py").write_text("print('hello')", encoding="utf-8")
+
+    summary = index_repo(conn, "HugeFileRepo", root)
+    chroma_path = tmp_path / "chroma"
+
+    result = embed_repo(
+        conn, summary["repo_id"], "HugeFileRepo", root, FakeEmbeddingClient(), chroma_path
+    )
+
+    # bundle.js's single ~75,000-char chunk exceeds MAX_CHUNK_CHARS and must be
+    # skipped; normal.py's tiny chunk must still be embedded.
+    assert result["chunk_count"] == 1
+    client = chromadb.PersistentClient(path=str(chroma_path))
+    collection = client.get_collection(name=collection_name("HugeFileRepo"))
+    docs = collection.get()["documents"]
+    assert not any("xxxxx" in doc for doc in docs)

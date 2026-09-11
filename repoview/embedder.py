@@ -6,7 +6,8 @@ from chromadb.errors import NotFoundError
 from repoview.config import CHUNK_LINES, CHUNK_OVERLAP
 from repoview.tools.search import iter_code_files
 
-EMBED_BATCH_SIZE = 100
+MAX_CHUNK_CHARS = 20_000
+EMBED_BATCH_CHAR_BUDGET = 400_000
 
 
 def chunk_file(path: Path, root: Path) -> list[dict]:
@@ -60,7 +61,7 @@ def embed_repo(
     embedding_client,
     chroma_path: Path,
 ) -> dict:
-    chunks = chunk_repo(Path(root))
+    chunks = [c for c in chunk_repo(Path(root)) if len(c["text"]) <= MAX_CHUNK_CHARS]
 
     client = chromadb.PersistentClient(path=str(chroma_path))
     name_in_chroma = collection_name(name)
@@ -70,7 +71,7 @@ def embed_repo(
         pass
     collection = client.create_collection(name=name_in_chroma)
 
-    for batch in _batched(chunks, EMBED_BATCH_SIZE):
+    for batch in _batched_by_chars(chunks, EMBED_BATCH_CHAR_BUDGET):
         texts = [chunk["text"] for chunk in batch]
         embeddings = embedding_client.embed(texts)
         collection.add(
@@ -89,6 +90,16 @@ def embed_repo(
     return {"repo_id": repo_id, "chunk_count": len(chunks)}
 
 
-def _batched(items: list, size: int):
-    for start in range(0, len(items), size):
-        yield items[start : start + size]
+def _batched_by_chars(items: list[dict], max_chars: int):
+    batch: list[dict] = []
+    batch_chars = 0
+    for item in items:
+        item_chars = len(item["text"])
+        if batch and batch_chars + item_chars > max_chars:
+            yield batch
+            batch = []
+            batch_chars = 0
+        batch.append(item)
+        batch_chars += item_chars
+    if batch:
+        yield batch
