@@ -41,3 +41,18 @@ def test_foreign_keys_are_enforced(tmp_path):
     except sqlite3.IntegrityError:
         raised = True
     assert raised
+
+
+def test_eval_result_has_false_positive_column(tmp_path):
+    conn = get_connection(tmp_path / "test.db")
+    init_db(conn)
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(eval_result)")}
+    assert "false_positive" in columns
+
+
+def test_false_positive_migration_is_safe_to_run_twice(tmp_path):
+    conn = get_connection(tmp_path / "test.db")
+    init_db(conn)
+    init_db(conn)
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(eval_result)")}
+    assert "false_positive" in columns
