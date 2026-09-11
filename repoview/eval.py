@@ -57,10 +57,21 @@ def run_eval(
         is_negative = case["category"] == NEGATIVE_CATEGORY
 
         started = time.monotonic()
-        result = run_session(
-            conn, repo_id, case["question"], llm,
-            model=model, phase=phase, embedding_client=embedding_client,
-        )
+        try:
+            result = run_session(
+                conn, repo_id, case["question"], llm,
+                model=model, phase=phase, embedding_client=embedding_client,
+            )
+        except Exception as exc:
+            _record_eval_result(
+                conn, eval_run_id, case["id"], None, 0, 0,
+                f"ERROR: {type(exc).__name__}: {exc}",
+            )
+            if is_negative:
+                negative_total += 1
+            else:
+                positive_total += 1
+            continue
         latency_ms = int((time.monotonic() - started) * 1000)
         review = result.final_review or ""
 
@@ -181,26 +192,29 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    validate_judge_model(OPENAI_MODEL, JUDGE_MODEL)
+    try:
+        validate_judge_model(OPENAI_MODEL, JUDGE_MODEL)
 
-    conn = get_connection()
-    init_db(conn)
+        conn = get_connection()
+        init_db(conn)
 
-    row = conn.execute("SELECT id FROM repo WHERE name = ?", (args.repo,)).fetchone()
-    if row is None:
-        raise SystemExit(f"{args.repo}가 인덱싱되지 않았습니다. 먼저 python -m repoview.index를 실행하세요.")
-    repo_id = row["id"]
+        row = conn.execute("SELECT id FROM repo WHERE name = ?", (args.repo,)).fetchone()
+        if row is None:
+            raise SystemExit(f"{args.repo}가 인덱싱되지 않았습니다. 먼저 python -m repoview.index를 실행하세요.")
+        repo_id = row["id"]
 
-    cases = list_eval_cases(conn, repo_id)
+        cases = list_eval_cases(conn, repo_id)
 
-    llm = OpenAILLM(model=OPENAI_MODEL)
-    judge_llm = OpenAILLM(model=JUDGE_MODEL)
-    embedding_client = OpenAIEmbeddingClient() if args.phase == 3 else None
+        llm = OpenAILLM(model=OPENAI_MODEL)
+        judge_llm = OpenAILLM(model=JUDGE_MODEL)
+        embedding_client = OpenAIEmbeddingClient() if args.phase == 3 else None
 
-    stats = run_eval(
-        conn, repo_id, cases, llm, judge_llm,
-        model=OPENAI_MODEL, phase=args.phase, embedding_client=embedding_client,
-    )
+        stats = run_eval(
+            conn, repo_id, cases, llm, judge_llm,
+            model=OPENAI_MODEL, phase=args.phase, embedding_client=embedding_client,
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
     print(
         f"[Phase {args.phase}] {args.repo}: 탐지율 {stats['detection_rate']:.0%}, "

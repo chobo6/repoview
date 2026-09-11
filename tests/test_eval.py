@@ -147,6 +147,30 @@ def test_run_eval_writes_eval_run_row_and_links_session(conn, repo_id, seeded_ca
     assert all(r["session_id"] is not None for r in result_rows)
 
 
+def test_run_eval_isolates_case_failure_and_still_finishes_run(conn, repo_id, seeded_cases):
+    # llm has no prepared responses, so run_session's first llm.call() raises immediately
+    # for every case (FakeLLM raises AssertionError when responses are exhausted).
+    llm = FakeLLM([])
+    judge_llm = FakeLLM([])
+
+    stats = run_eval(conn, repo_id, seeded_cases, llm, judge_llm, model="gpt-4o", phase=2)
+
+    assert stats is not None
+
+    result_rows = conn.execute(
+        "SELECT session_id, detected, false_positive, judge_reason FROM eval_result"
+    ).fetchall()
+    assert len(result_rows) == len(seeded_cases)
+    for row in result_rows:
+        assert row["session_id"] is None
+        assert row["detected"] == 0
+        assert row["false_positive"] == 0
+        assert row["judge_reason"].startswith("ERROR: AssertionError")
+
+    run_row = conn.execute("SELECT finished_at FROM eval_run").fetchone()
+    assert run_row["finished_at"] is not None
+
+
 def test_run_eval_raises_on_empty_case_list(conn, repo_id):
     with pytest.raises(ValueError):
         run_eval(conn, repo_id, [], FakeLLM([]), FakeLLM([]), model="gpt-4o", phase=2)
