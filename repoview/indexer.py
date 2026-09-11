@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from collections import Counter
 from pathlib import Path
@@ -27,19 +28,23 @@ def detect_frameworks(root: Path) -> list[str]:
     root = Path(root)
     found: list[str] = []
 
-    for manifest in sorted(root.rglob("*")):
-        if manifest.name not in MANIFEST_NAMES or not manifest.is_file():
-            continue
-        relative_parts = manifest.relative_to(root).parts
-        if any(part in EXCLUDED_DIRS for part in relative_parts):
-            continue
-        if len(relative_parts) > MANIFEST_MAX_DEPTH:
-            continue
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in EXCLUDED_DIRS)
+        depth = len(Path(dirpath).relative_to(root).parts)
+        if depth >= MANIFEST_MAX_DEPTH:
+            # 매니페스트는 이 깊이의 파일까지만 인정하므로 더 내려갈 필요가 없다.
+            dirnames[:] = []
 
-        text = manifest.read_text(encoding="utf-8", errors="replace")
-        for filename, marker, framework in FRAMEWORK_MARKERS:
-            if manifest.name == filename and marker in text and framework not in found:
-                found.append(framework)
+        for filename in sorted(filenames):
+            if filename not in MANIFEST_NAMES:
+                continue
+            if depth + 1 > MANIFEST_MAX_DEPTH:
+                continue
+            manifest = Path(dirpath) / filename
+            text = manifest.read_text(encoding="utf-8", errors="replace")
+            for marker_filename, marker, framework in FRAMEWORK_MARKERS:
+                if filename == marker_filename and marker in text and framework not in found:
+                    found.append(framework)
 
     return found
 

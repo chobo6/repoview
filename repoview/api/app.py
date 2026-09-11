@@ -2,6 +2,7 @@ import sqlite3
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -11,6 +12,13 @@ from repoview.agent.loop import run_session
 from repoview.agent.prompts import build_repo_overview
 from repoview.config import CURRENT_PHASE, OPENAI_MODEL
 from repoview.db import get_connection, init_db
+
+
+def _error_response(status_code: int, message: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={"error": {"code": str(status_code), "message": message}},
+    )
 
 
 @asynccontextmanager
@@ -23,6 +31,18 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="RepoView API", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def catch_unhandled_exceptions(request: Request, call_next):
+    """CORSMiddleware보다 먼저 등록해야 CORS가 이 미들웨어를 감싸서
+    처리되지 않은 예외에도 CORS 헤더가 붙는다 (Starlette는 미들웨어를
+    등록의 역순으로 적용한다)."""
+    try:
+        return await call_next(request)
+    except Exception as exc:
+        return _error_response(500, f"{type(exc).__name__}: {exc}")
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -52,10 +72,12 @@ def get_llm():
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"error": {"code": str(exc.status_code), "message": exc.detail}},
-    )
+    return _error_response(exc.status_code, exc.detail)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    return _error_response(422, "요청 형식이 올바르지 않습니다")
 
 
 @app.get("/api/repos")

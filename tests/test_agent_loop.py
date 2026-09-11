@@ -88,6 +88,20 @@ def test_session_row_is_updated_on_completion(conn, repo_id):
     assert row["input_tokens"] > 0
 
 
+def test_llm_exception_marks_session_failed(conn, repo_id):
+    class RaisingLLM:
+        def call(self, messages, tools):
+            raise RuntimeError("네트워크 오류 테스트")
+
+    with pytest.raises(RuntimeError):
+        run_session(conn, repo_id, "질문", RaisingLLM())
+
+    row = conn.execute("SELECT * FROM session ORDER BY id DESC LIMIT 1").fetchone()
+    assert row["status"] == "FAILED"
+    assert "네트워크 오류 테스트" in row["error"]
+    assert row["finished_at"] is not None
+
+
 def test_long_tool_result_is_truncated_in_trace(conn, repo_id, monkeypatch):
     from repoview.agent import loop as loop_module
 

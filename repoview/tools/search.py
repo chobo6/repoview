@@ -1,3 +1,4 @@
+import os
 import re
 from collections.abc import Iterator
 from fnmatch import fnmatch
@@ -15,17 +16,18 @@ MAX_LINE_PREVIEW = 200
 
 def iter_code_files(repo_root: Path) -> Iterator[Path]:
     root = Path(repo_root)
-    for path in sorted(root.rglob("*")):
-        if not path.is_file():
-            continue
-        relative_parts = path.relative_to(root).parts
-        if any(part in EXCLUDED_DIRS for part in relative_parts):
-            continue
-        if path.suffix.lower() not in CODE_EXTENSIONS:
-            continue
-        if path.stat().st_size > MAX_INDEXED_FILE_BYTES:
-            continue
-        yield path
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in EXCLUDED_DIRS)
+        for filename in sorted(filenames):
+            path = Path(dirpath) / filename
+            if path.suffix.lower() not in CODE_EXTENSIONS:
+                continue
+            try:
+                if path.stat().st_size > MAX_INDEXED_FILE_BYTES:
+                    continue
+            except OSError:
+                continue
+            yield path
 
 
 def search_code(
@@ -34,7 +36,7 @@ def search_code(
     path_glob: str | None = None,
     max_results: int | None = None,
 ) -> str:
-    limit = max_results or MAX_SEARCH_RESULTS
+    limit = max_results if max_results is not None else MAX_SEARCH_RESULTS
 
     try:
         regex = re.compile(pattern, re.IGNORECASE)

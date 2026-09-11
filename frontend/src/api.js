@@ -12,7 +12,13 @@ export async function createSession(repoId, question) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ repo_id: repoId, question }),
   })
-  const body = await response.json()
+  let body
+  try {
+    body = await response.json()
+  } catch {
+    if (!response.ok) throw new Error('요청이 실패했습니다')
+    throw new Error('응답을 해석하지 못했습니다')
+  }
   if (!response.ok) throw new Error(body.error?.message ?? '요청이 실패했습니다')
   return body
 }

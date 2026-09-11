@@ -31,7 +31,7 @@ def run_session(
     phase: int = CURRENT_PHASE,
     max_iterations: int | None = None,
 ) -> SessionResult:
-    limit = max_iterations or MAX_ITERATIONS
+    limit = max_iterations if max_iterations is not None else MAX_ITERATIONS
     repo = conn.execute("SELECT * FROM repo WHERE id = ?", (repo_id,)).fetchone()
     if repo is None:
         raise ValueError(f"레포를 찾을 수 없습니다: {repo_id}")
@@ -41,50 +41,57 @@ def run_session(
 
     session_id = _create_session(conn, repo_id, question, model, phase)
 
-    messages: list[dict] = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": question},
-    ]
-
     step_no = 0
     totals = {"input": 0, "output": 0}
     iteration = 0
 
-    for iteration in range(1, limit + 1):
-        response = _call_llm(llm, messages, TOOL_SCHEMAS, totals)
-        step_no += 1
-        _record_llm_step(conn, session_id, step_no, response)
-        messages.append(response.raw_message)
+    try:
+        messages: list[dict] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": question},
+        ]
 
-        if not response.tool_calls:
-            return _finish(
-                conn, session_id, "COMPLETED", response.text, iteration, totals
-            )
-
-        for call in response.tool_calls:
+        for iteration in range(1, limit + 1):
+            response = _call_llm(llm, messages, TOOL_SCHEMAS, totals)
             step_no += 1
-            started = time.monotonic()
-            result = dispatch(repo_root, call.name, call.arguments)
-            latency_ms = int((time.monotonic() - started) * 1000)
+            _record_llm_step(conn, session_id, step_no, response)
+            messages.append(response.raw_message)
 
-            _record_tool_step(conn, session_id, step_no, call, result, latency_ms)
-            messages.append(
-                {"role": "tool", "tool_call_id": call.id, "content": result}
-            )
+            if not response.tool_calls:
+                return _finish(
+                    conn, session_id, "COMPLETED", response.text, iteration, totals
+                )
 
-    # 반복 상한 도달: 도구 없이 한 번 더 호출해 지금까지 찾은 내용을 정리시킨다.
-    messages.append(
-        {
-            "role": "user",
-            "content": "탐색 한도에 도달했습니다. 더 이상 도구를 호출하지 말고, "
-            "지금까지 확인한 근거만으로 결론을 정리해 주세요.",
-        }
-    )
-    summary = _call_llm(llm, messages, [], totals)
-    step_no += 1
-    _record_llm_step(conn, session_id, step_no, summary)
+            for call in response.tool_calls:
+                step_no += 1
+                started = time.monotonic()
+                result = dispatch(repo_root, call.name, call.arguments)
+                latency_ms = int((time.monotonic() - started) * 1000)
 
-    return _finish(conn, session_id, "CAPPED", summary.text, iteration, totals)
+                _record_tool_step(conn, session_id, step_no, call, result, latency_ms)
+                messages.append(
+                    {"role": "tool", "tool_call_id": call.id, "content": result}
+                )
+
+        # 반복 상한 도달: 도구 없이 한 번 더 호출해 지금까지 찾은 내용을 정리시킨다.
+        messages.append(
+            {
+                "role": "user",
+                "content": "탐색 한도에 도달했습니다. 더 이상 도구를 호출하지 말고, "
+                "지금까지 확인한 근거만으로 결론을 정리해 주세요.",
+            }
+        )
+        summary = _call_llm(llm, messages, [], totals)
+        step_no += 1
+        _record_llm_step(conn, session_id, step_no, summary)
+
+        return _finish(conn, session_id, "CAPPED", summary.text, iteration, totals)
+    except Exception as exc:
+        _finish(
+            conn, session_id, "FAILED", None, iteration, totals,
+            error=f"{type(exc).__name__}: {exc}",
+        )
+        raise
 
 
 def _call_llm(llm, messages: list[dict], tools: list[dict], totals: dict):
@@ -148,16 +155,22 @@ def _record_tool_step(
 
 
 def _finish(
-    conn, session_id: int, status: str, final_review: str | None, iteration: int, totals: dict
+    conn,
+    session_id: int,
+    status: str,
+    final_review: str | None,
+    iteration: int,
+    totals: dict,
+    error: str | None = None,
 ) -> SessionResult:
     conn.execute(
         """
         UPDATE session
         SET status = ?, final_review = ?, iteration_count = ?,
-            input_tokens = ?, output_tokens = ?, finished_at = datetime('now')
+            input_tokens = ?, output_tokens = ?, error = ?, finished_at = datetime('now')
         WHERE id = ?
         """,
-        (status, final_review, iteration, totals["input"], totals["output"], session_id),
+        (status, final_review, iteration, totals["input"], totals["output"], error, session_id),
     )
     conn.commit()
     return SessionResult(

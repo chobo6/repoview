@@ -83,3 +83,22 @@ def test_list_sessions(client):
     response = client.get("/api/sessions")
     assert response.status_code == 200
     assert len(response.json()) >= 1
+
+
+def test_unhandled_exception_still_has_cors_header(client, monkeypatch):
+    from repoview.api import app as app_module
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("서버 내부 오류 테스트")
+
+    monkeypatch.setattr(app_module, "run_session", boom)
+    repo_id = client.get("/api/repos").json()[0]["id"]
+
+    response = client.post(
+        "/api/sessions",
+        json={"repo_id": repo_id, "question": "질문"},
+        headers={"Origin": "http://localhost:5173"},
+    )
+
+    assert response.status_code == 500
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:5173"
