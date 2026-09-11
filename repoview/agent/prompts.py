@@ -63,7 +63,9 @@ def build_system_prompt(overview: str) -> str:
 {overview}
 
 [도구 사용 지침]
-- 먼저 search_code로 관련 코드를 찾고, 후보를 좁힌 뒤 read_file로 실제 내용을 확인하세요.
+- search_code로 먼저 관련 코드를 찾으세요. 정확한 함수명·키워드를 모르거나
+  search_code 결과가 없거나 부족하면 search_semantic을 사용하세요.
+- 후보를 좁힌 뒤 read_file로 실제 내용을 확인하세요.
 - read_file은 한 번에 최대 200행을 반환합니다. 필요한 범위를 지정해 좁게 읽으세요.
 - 구조를 더 봐야 하면 list_directory를 사용하세요. 레포 개요는 위에 이미 주어져 있습니다.
 - 충분한 근거를 모았다면 더 도구를 호출하지 말고 최종 답변을 작성하세요.
