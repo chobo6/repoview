@@ -1,7 +1,10 @@
+import chromadb
 import pytest
 
 from repoview.agent.llm import FakeLLM, make_text_response, make_tool_call_response
 from repoview.agent.loop import run_session
+from repoview.embedder import collection_name
+from repoview.embedding_client import FakeEmbeddingClient
 from repoview.indexer import index_repo
 
 
@@ -118,3 +121,67 @@ def test_long_tool_result_is_truncated_in_trace(conn, repo_id, monkeypatch):
     ).fetchone()
     assert len(row["tool_result"]) <= 50
     assert row["tool_result_length"] > 50
+
+
+def test_search_semantic_works_when_repo_is_embedded(conn, repo_id, tmp_path, monkeypatch):
+    import repoview.agent.loop as loop_module
+
+    monkeypatch.setattr(loop_module, "CHROMA_PATH", tmp_path / "chroma")
+
+    embedder = FakeEmbeddingClient()
+    client = chromadb.PersistentClient(path=str(tmp_path / "chroma"))
+    collection = client.create_collection(name=collection_name("MiniRepo"))
+    collection.add(
+        ids=["src/main/java/com/example/UserService.java:1-17"],
+        documents=["public List<User> findAllWithOrders() { ... }"],
+        metadatas=[
+            {
+                "file_path": "src/main/java/com/example/UserService.java",
+                "start_line": 1,
+                "end_line": 17,
+            }
+        ],
+        embeddings=embedder.embed(["public List<User> findAllWithOrders() { ... }"]),
+    )
+
+    llm = FakeLLM([
+        make_tool_call_response(
+            "search_semantic", {"query": "public List<User> findAllWithOrders() { ... }"}
+        ),
+        make_text_response("끝"),
+    ])
+
+    result = run_session(conn, repo_id, "질문", llm, embedding_client=embedder)
+
+    row = conn.execute(
+        "SELECT tool_result FROM trace_step WHERE session_id = ? AND type = 'TOOL_CALL'",
+        (result.session_id,),
+    ).fetchone()
+    assert "UserService.java:1-17" in row["tool_result"]
+
+
+def test_search_semantic_gracefully_errors_when_repo_not_embedded(conn, repo_id, tmp_path, monkeypatch):
+    import repoview.agent.loop as loop_module
+
+    monkeypatch.setattr(loop_module, "CHROMA_PATH", tmp_path / "chroma_never_written")
+
+    llm = FakeLLM([
+        make_tool_call_response("search_semantic", {"query": "아무 질문"}),
+        make_text_response("끝"),
+    ])
+
+    result = run_session(conn, repo_id, "질문", llm, embedding_client=FakeEmbeddingClient())
+
+    assert result.status == "COMPLETED"
+    row = conn.execute(
+        "SELECT tool_result FROM trace_step WHERE session_id = ? AND type = 'TOOL_CALL'",
+        (result.session_id,),
+    ).fetchone()
+    assert row["tool_result"].startswith("ERROR:")
+
+
+def test_run_session_without_embedding_client_still_works(conn, repo_id):
+    # 기존 Phase 2 스타일 호출 — embedding_client를 아예 안 주는 경우도 여전히 동작해야 한다.
+    llm = FakeLLM([make_text_response("완료")])
+    result = run_session(conn, repo_id, "질문", llm)
+    assert result.status == "COMPLETED"

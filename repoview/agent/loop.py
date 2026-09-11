@@ -4,8 +4,12 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import chromadb
+from chromadb.errors import NotFoundError
+
 from repoview.agent.prompts import build_repo_overview, build_system_prompt
-from repoview.config import CURRENT_PHASE, MAX_ITERATIONS
+from repoview.config import CHROMA_PATH, CURRENT_PHASE, MAX_ITERATIONS
+from repoview.embedder import collection_name
 from repoview.tools import TOOL_SCHEMAS, dispatch
 
 MAX_TRACE_RESULT_CHARS = 8_000
@@ -30,6 +34,7 @@ def run_session(
     model: str = "",
     phase: int = CURRENT_PHASE,
     max_iterations: int | None = None,
+    embedding_client=None,
 ) -> SessionResult:
     limit = max_iterations if max_iterations is not None else MAX_ITERATIONS
     repo = conn.execute("SELECT * FROM repo WHERE id = ?", (repo_id,)).fetchone()
@@ -38,6 +43,7 @@ def run_session(
 
     repo_root = Path(repo["root_path"])
     system_prompt = build_system_prompt(build_repo_overview(conn, repo_id))
+    collection = _resolve_collection(repo["name"], embedding_client)
 
     session_id = _create_session(conn, repo_id, question, model, phase)
 
@@ -65,7 +71,13 @@ def run_session(
             for call in response.tool_calls:
                 step_no += 1
                 started = time.monotonic()
-                result = dispatch(repo_root, call.name, call.arguments)
+                result = dispatch(
+                    repo_root,
+                    call.name,
+                    call.arguments,
+                    collection=collection,
+                    embedding_client=embedding_client,
+                )
                 latency_ms = int((time.monotonic() - started) * 1000)
 
                 _record_tool_step(conn, session_id, step_no, call, result, latency_ms)
@@ -92,6 +104,21 @@ def run_session(
             error=f"{type(exc).__name__}: {exc}",
         )
         raise
+
+
+def _resolve_collection(repo_name: str, embedding_client):
+    """embedding_client가 없으면 Chroma를 아예 열지 않는다 — Phase 2 스타일 호출에서
+    불필요한 파일시스템 접근을 피하기 위해서다. 컬렉션이 없으면 None을 반환하고,
+    search_semantic이 이를 "아직 임베딩되지 않음" 에러로 안내한다.
+    """
+    if embedding_client is None:
+        return None
+
+    client = chromadb.PersistentClient(path=str(CHROMA_PATH))
+    try:
+        return client.get_collection(name=collection_name(repo_name))
+    except NotFoundError:
+        return None
 
 
 def _call_llm(llm, messages: list[dict], tools: list[dict], totals: dict):

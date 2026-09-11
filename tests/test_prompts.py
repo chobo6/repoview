@@ -71,3 +71,9 @@ def test_overview_shows_truncation_note_for_many_languages(conn):
     overview = build_repo_overview(conn, repo_id)
     # Should show truncation note for languages (8 languages, max 6, so 2 more)
     assert "외 2개 언어" in overview
+
+
+def test_system_prompt_includes_search_strategy_guidance():
+    prompt = build_system_prompt("개요")
+    assert "search_code" in prompt
+    assert "search_semantic" in prompt

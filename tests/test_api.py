@@ -2,15 +2,20 @@ import pytest
 from fastapi.testclient import TestClient
 
 from repoview.agent.llm import FakeLLM, make_text_response, make_tool_call_response
-from repoview.api.app import app, get_db, get_llm
+from repoview.api.app import app, get_db, get_embedding_client, get_llm
+from repoview.embedding_client import FakeEmbeddingClient
 from repoview.indexer import index_repo
 
 
 @pytest.fixture
-def client(conn, mini_repo):
+def client(conn, mini_repo, monkeypatch, tmp_path):
+    import repoview.agent.loop as loop_module
+
+    monkeypatch.setattr(loop_module, "CHROMA_PATH", tmp_path / "chroma")
     index_repo(conn, "MiniRepo", mini_repo)
     app.dependency_overrides[get_db] = lambda: conn
     app.dependency_overrides[get_llm] = lambda: FakeLLM([make_text_response("리뷰 결과")])
+    app.dependency_overrides[get_embedding_client] = lambda: FakeEmbeddingClient()
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -55,13 +60,17 @@ def test_create_session_with_blank_question_returns_400(client):
     assert response.status_code == 400
 
 
-def test_get_session_includes_trace(conn, mini_repo):
+def test_get_session_includes_trace(conn, mini_repo, monkeypatch, tmp_path):
+    import repoview.agent.loop as loop_module
+
+    monkeypatch.setattr(loop_module, "CHROMA_PATH", tmp_path / "chroma")
     index_repo(conn, "MiniRepo", mini_repo)
     app.dependency_overrides[get_db] = lambda: conn
     app.dependency_overrides[get_llm] = lambda: FakeLLM([
         make_tool_call_response("search_code", {"pattern": "class"}),
         make_text_response("끝"),
     ])
+    app.dependency_overrides[get_embedding_client] = lambda: FakeEmbeddingClient()
     client = TestClient(app)
 
     repo_id = client.get("/api/repos").json()[0]["id"]
@@ -102,3 +111,12 @@ def test_unhandled_exception_still_has_cors_header(client, monkeypatch):
 
     assert response.status_code == 500
     assert response.headers.get("access-control-allow-origin") == "http://localhost:5173"
+
+
+def test_create_session_still_works_with_real_embedding_client_dependency_overridden(client):
+    # get_embedding_client가 의존성 주입 체인에 실제로 연결돼 있는지 확인한다.
+    # (세션 생성 자체가 200으로 끝나면, embedding_client가 run_session까지 전달되는
+    # 배선이 끊어지지 않았다는 뜻이다 — 상세 검증은 Task 7의 test_agent_loop.py가 담당한다.)
+    repo_id = client.get("/api/repos").json()[0]["id"]
+    response = client.post("/api/sessions", json={"repo_id": repo_id, "question": "질문"})
+    assert response.status_code == 200

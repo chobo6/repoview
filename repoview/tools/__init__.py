@@ -2,6 +2,7 @@ from pathlib import Path
 
 from repoview.tools.files import list_directory, read_file
 from repoview.tools.search import search_code
+from repoview.tools.semantic import search_semantic
 
 TOOL_SCHEMAS: list[dict] = [
     {
@@ -43,6 +44,24 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "search_semantic",
+            "description": (
+                "자연어 질문으로 의미가 비슷한 코드를 찾는다. "
+                "정확한 함수명/키워드를 모를 때, 또는 search_code로 찾지 못했을 때 사용한다."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "찾고 싶은 코드를 자연어로 설명"},
+                    "top_k": {"type": "integer", "description": "반환할 결과 수 (기본 5)"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "read_file",
             "description": "파일 내용을 행 번호와 함께 읽는다. 인용할 근거를 확보하려면 반드시 이 도구로 실제 내용을 확인해야 한다.",
             "parameters": {
@@ -59,7 +78,14 @@ TOOL_SCHEMAS: list[dict] = [
 ]
 
 
-def dispatch(repo_root: Path, name: str, args: dict) -> str:
+def dispatch(
+    repo_root: Path,
+    name: str,
+    args: dict,
+    *,
+    collection=None,
+    embedding_client=None,
+) -> str:
     """도구를 실행한다. 어떤 실패도 예외로 전파하지 않고 'ERROR: ...' 문자열로 반환한다."""
     try:
         if name == "list_directory":
@@ -77,6 +103,13 @@ def dispatch(repo_root: Path, name: str, args: dict) -> str:
                 args["pattern"],
                 args.get("path_glob"),
                 _optional_int(args.get("max_results")),
+            )
+        if name == "search_semantic":
+            return search_semantic(
+                collection,
+                embedding_client,
+                args["query"],
+                _optional_int(args.get("top_k")),
             )
         return f"ERROR: 알 수 없는 도구입니다: {name}"
     except KeyError as exc:

@@ -19,7 +19,7 @@ MAX_ITERATIONS = int(os.getenv("REPOVIEW_MAX_ITERATIONS", "3"))
 MAX_FILE_LINES = 200
 MAX_SEARCH_RESULTS = 20
 MAX_INDEXED_FILE_BYTES = 1_000_000
-CURRENT_PHASE = 2
+CURRENT_PHASE = 3
 
 EXCLUDED_DIRS = {
     ".git", ".idea", ".vscode", "__pycache__", ".pytest_cache",
@@ -36,3 +36,9 @@ CODE_EXTENSIONS: dict[str, str] = {
 
 # primary_language 집계에서 제외할 언어 (설정/문서 파일이 본체 언어를 가리는 것 방지)
 NON_SOURCE_LANGUAGES = {"json", "yaml", "markdown", "xml", "css", "html"}
+
+CHUNK_LINES = 50
+CHUNK_OVERLAP = 10
+EMBEDDING_MODEL = os.getenv("REPOVIEW_EMBEDDING_MODEL", "text-embedding-3-small")
+DEFAULT_TOP_K = 5
+CHROMA_PATH = Path(os.getenv("REPOVIEW_CHROMA_PATH") or PROJECT_ROOT / "chroma_data")
