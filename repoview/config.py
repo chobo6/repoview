@@ -19,7 +19,7 @@ MAX_ITERATIONS = int(os.getenv("REPOVIEW_MAX_ITERATIONS", "3"))
 MAX_FILE_LINES = 200
 MAX_SEARCH_RESULTS = 20
 MAX_INDEXED_FILE_BYTES = 1_000_000
-CURRENT_PHASE = 2
+CURRENT_PHASE = 3
 
 EXCLUDED_DIRS = {
     ".git", ".idea", ".vscode", "__pycache__", ".pytest_cache",

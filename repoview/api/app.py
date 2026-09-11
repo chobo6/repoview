@@ -12,6 +12,7 @@ from repoview.agent.loop import run_session
 from repoview.agent.prompts import build_repo_overview
 from repoview.config import CURRENT_PHASE, OPENAI_MODEL
 from repoview.db import get_connection, init_db
+from repoview.embedding_client import OpenAIEmbeddingClient
 
 
 def _error_response(status_code: int, message: str) -> JSONResponse:
@@ -70,6 +71,10 @@ def get_llm():
     return OpenAILLM(OPENAI_MODEL)
 
 
+def get_embedding_client():
+    return OpenAIEmbeddingClient()
+
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     return _error_response(exc.status_code, exc.detail)
@@ -99,6 +104,7 @@ def create_session(
     payload: SessionRequest,
     conn: sqlite3.Connection = Depends(get_db),
     llm=Depends(get_llm),
+    embedding_client=Depends(get_embedding_client),
 ) -> dict:
     question = payload.question.strip()
     if not question:
@@ -109,7 +115,13 @@ def create_session(
         raise HTTPException(status_code=404, detail=f"레포를 찾을 수 없습니다: {payload.repo_id}")
 
     result = run_session(
-        conn, payload.repo_id, question, llm, model=OPENAI_MODEL, phase=CURRENT_PHASE
+        conn,
+        payload.repo_id,
+        question,
+        llm,
+        model=OPENAI_MODEL,
+        phase=CURRENT_PHASE,
+        embedding_client=embedding_client,
     )
     return {
         "session_id": result.session_id,
