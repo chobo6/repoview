@@ -1,0 +1,17 @@
+[
+  {
+    "question": "성능 관점에서 UserService에 문제 있어?",
+    "expected_finding": "findAllWithOrders가 사용자마다 findOrdersByUserId를 반복 호출해 N+1 쿼리가 발생한다",
+    "expected_file_path": "src/main/java/com/example/UserService.java",
+    "expected_line_start": 11,
+    "expected_line_end": 14,
+    "category": "n_plus_one",
+    "is_planted": 1
+  },
+  {
+    "question": "OrderController에 보안 취약점 있어?",
+    "expected_finding": "OrderController.list()는 UserService에 단순 위임만 하며 특별한 보안 문제가 없다",
+    "category": "negative",
+    "is_planted": 0
+  }
+]
