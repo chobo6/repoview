@@ -1,7 +1,7 @@
 import pytest
 
 from repoview.agent.llm import FakeLLM, make_text_response
-from repoview.eval import estimate_cost_usd, list_eval_cases, run_eval
+from repoview.eval import estimate_cost_usd, list_eval_cases, run_eval, validate_judge_model
 from repoview.eval_seed import seed_eval_cases
 from repoview.indexer import index_repo
 
@@ -150,3 +150,12 @@ def test_run_eval_writes_eval_run_row_and_links_session(conn, repo_id, seeded_ca
 def test_run_eval_raises_on_empty_case_list(conn, repo_id):
     with pytest.raises(ValueError):
         run_eval(conn, repo_id, [], FakeLLM([]), FakeLLM([]), model="gpt-4o", phase=2)
+
+
+def test_validate_judge_model_passes_when_different():
+    validate_judge_model("gpt-4o", "gpt-4o-mini")  # 예외 없이 통과해야 함
+
+
+def test_validate_judge_model_raises_when_same():
+    with pytest.raises(ValueError):
+        validate_judge_model("gpt-4o", "gpt-4o")

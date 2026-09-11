@@ -1,10 +1,13 @@
+import argparse
 import json
 import sqlite3
 import time
 
-from repoview.agent.llm import LLM
+from repoview.agent.llm import LLM, OpenAILLM
 from repoview.agent.loop import run_session
-from repoview.config import MODEL_PRICING
+from repoview.config import JUDGE_MODEL, MODEL_PRICING, OPENAI_MODEL, REPOS
+from repoview.db import get_connection, init_db
+from repoview.embedding_client import OpenAIEmbeddingClient
 from repoview.eval_citations import extract_citations, matches_file
 from repoview.eval_judge import judge_case
 
@@ -159,3 +162,54 @@ def _finish_eval_run(conn: sqlite3.Connection, eval_run_id: int, stats: dict) ->
         ),
     )
     conn.commit()
+
+
+def validate_judge_model(model: str, judge_model: str) -> None:
+    if model == judge_model:
+        raise ValueError(
+            f"판정 모델({judge_model})이 평가 대상 모델({model})과 같습니다. "
+            "REPOVIEW_JUDGE_MODEL을 다른 모델로 설정하세요."
+        )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Phase별 리뷰 탐지율을 측정한다")
+    parser.add_argument("--repo", required=True, choices=sorted(REPOS), help="평가할 레포 이름")
+    parser.add_argument(
+        "--phase", type=int, required=True, choices=[2, 3],
+        help="평가할 Phase (2=키워드 검색만, 3=RAG 포함)",
+    )
+    args = parser.parse_args()
+
+    validate_judge_model(OPENAI_MODEL, JUDGE_MODEL)
+
+    conn = get_connection()
+    init_db(conn)
+
+    row = conn.execute("SELECT id FROM repo WHERE name = ?", (args.repo,)).fetchone()
+    if row is None:
+        raise SystemExit(f"{args.repo}가 인덱싱되지 않았습니다. 먼저 python -m repoview.index를 실행하세요.")
+    repo_id = row["id"]
+
+    cases = list_eval_cases(conn, repo_id)
+
+    llm = OpenAILLM(model=OPENAI_MODEL)
+    judge_llm = OpenAILLM(model=JUDGE_MODEL)
+    embedding_client = OpenAIEmbeddingClient() if args.phase == 3 else None
+
+    stats = run_eval(
+        conn, repo_id, cases, llm, judge_llm,
+        model=OPENAI_MODEL, phase=args.phase, embedding_client=embedding_client,
+    )
+
+    print(
+        f"[Phase {args.phase}] {args.repo}: 탐지율 {stats['detection_rate']:.0%}, "
+        f"오탐율 {stats['fpr']:.0%}, 인용 정확도 {stats['citation_accuracy']:.0%}, "
+        f"평균 비용 ${stats['avg_cost_usd']:.4f}, 평균 지연 {stats['avg_latency_ms']:.0f}ms"
+    )
+
+    conn.close()
+
+
+if __name__ == "__main__":
+    main()
