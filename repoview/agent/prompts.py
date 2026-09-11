@@ -28,6 +28,9 @@ def build_repo_overview(conn: sqlite3.Connection, repo_id: int) -> str:
         for directory, count in directory_counts.most_common(MAX_TREE_ENTRIES)
     ]
 
+    if len(directory_counts) > MAX_TREE_ENTRIES:
+        tree_lines.append(f"  ... (외 {len(directory_counts) - MAX_TREE_ENTRIES}개 디렉토리 더 있음)")
+
     language_counts = Counter(
         row["language"]
         for row in conn.execute(
@@ -37,6 +40,9 @@ def build_repo_overview(conn: sqlite3.Connection, repo_id: int) -> str:
     language_summary = ", ".join(
         f"{language} {count}개" for language, count in language_counts.most_common(6)
     )
+
+    if len(language_counts) > 6:
+        language_summary += f" 외 {len(language_counts) - 6}개 언어"
 
     return "\n".join(
         [
