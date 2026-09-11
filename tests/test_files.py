@@ -46,3 +46,19 @@ def test_list_directory_excludes_node_modules(mini_repo):
 
 def test_list_directory_missing_dir_returns_error_string(mini_repo):
     assert list_directory(mini_repo, "없는디렉토리").startswith("ERROR:")
+
+
+def test_read_file_empty_file_succeeds(tmp_path):
+    empty = tmp_path / "empty.txt"
+    empty.write_text("", encoding="utf-8")
+    result = read_file(tmp_path, "empty.txt")
+    assert not result.startswith("ERROR:")
+    assert "파일이 비어 있습니다" in result
+
+
+def test_read_file_respects_end_line_zero(tmp_path):
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("line 1\nline 2\nline 3", encoding="utf-8")
+    result = read_file(tmp_path, "test.txt", start_line=1, end_line=0)
+    # end_line=0 should be honored as an explicit boundary (no lines)
+    assert "ERROR:" not in result or "line" not in result

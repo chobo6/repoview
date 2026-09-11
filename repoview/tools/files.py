@@ -21,8 +21,12 @@ def read_file(
     lines = target.read_text(encoding="utf-8", errors="replace").splitlines()
     total = len(lines)
 
-    start = max(1, start_line or 1)
-    end = min(total, end_line or total)
+    # Special case for empty file
+    if total == 0:
+        return f"{path} (파일이 비어 있습니다)"
+
+    start = max(1, start_line if start_line is not None else 1)
+    end = min(total, end_line if end_line is not None else total)
     if end - start + 1 > MAX_FILE_LINES:
         end = start + MAX_FILE_LINES - 1
 
