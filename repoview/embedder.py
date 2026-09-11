@@ -1,7 +1,12 @@
 from pathlib import Path
 
+import chromadb
+from chromadb.errors import NotFoundError
+
 from repoview.config import CHUNK_LINES, CHUNK_OVERLAP
 from repoview.tools.search import iter_code_files
+
+EMBED_BATCH_SIZE = 100
 
 
 def chunk_file(path: Path, root: Path) -> list[dict]:
@@ -45,3 +50,45 @@ def chunk_repo(root: Path) -> list[dict]:
 
 def collection_name(repo_name: str) -> str:
     return f"repo_{repo_name.lower()}"
+
+
+def embed_repo(
+    conn,
+    repo_id: int,
+    name: str,
+    root: Path,
+    embedding_client,
+    chroma_path: Path,
+) -> dict:
+    chunks = chunk_repo(Path(root))
+
+    client = chromadb.PersistentClient(path=str(chroma_path))
+    name_in_chroma = collection_name(name)
+    try:
+        client.delete_collection(name=name_in_chroma)
+    except NotFoundError:
+        pass
+    collection = client.create_collection(name=name_in_chroma)
+
+    for batch in _batched(chunks, EMBED_BATCH_SIZE):
+        texts = [chunk["text"] for chunk in batch]
+        embeddings = embedding_client.embed(texts)
+        collection.add(
+            ids=[f"{c['file_path']}:{c['start_line']}-{c['end_line']}" for c in batch],
+            documents=texts,
+            metadatas=[
+                {"file_path": c["file_path"], "start_line": c["start_line"], "end_line": c["end_line"]}
+                for c in batch
+            ],
+            embeddings=embeddings,
+        )
+
+    conn.execute("UPDATE repo SET chunk_count = ? WHERE id = ?", (len(chunks), repo_id))
+    conn.commit()
+
+    return {"repo_id": repo_id, "chunk_count": len(chunks)}
+
+
+def _batched(items: list, size: int):
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
