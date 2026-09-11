@@ -77,6 +77,26 @@ def test_run_eval_marks_positive_case_undetected_when_citation_missing(conn, rep
     assert stats["detection_rate"] == 0.0
 
 
+def test_run_eval_marks_positive_case_undetected_when_citation_points_at_wrong_file(
+    conn, repo_id, seeded_cases
+):
+    positive = [c for c in seeded_cases if c["category"] != "negative"]
+    llm = FakeLLM([
+        make_text_response(
+            "문제: N+1 쿼리\n근거: `src/main/java/com/example/OrderController.java:10-12`\n"
+            "영향: 느림\n제안: JOIN 사용"
+        )
+    ])
+    judge_llm = FakeLLM([make_text_response("YES\n리뷰가 N+1 문제를 정확히 지적했다")])
+
+    stats = run_eval(conn, repo_id, positive, llm, judge_llm, model="gpt-4o", phase=2)
+
+    assert stats["passed_cases"] == 0
+    row = conn.execute("SELECT detected, false_positive FROM eval_result").fetchone()
+    assert row["detected"] == 0
+    assert row["false_positive"] == 0
+
+
 def test_run_eval_marks_false_positive_on_negative_case(conn, repo_id, seeded_cases):
     negative = [c for c in seeded_cases if c["category"] == "negative"]
     llm = FakeLLM([
