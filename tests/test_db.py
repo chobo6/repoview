@@ -56,3 +56,18 @@ def test_false_positive_migration_is_safe_to_run_twice(tmp_path):
     init_db(conn)
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(eval_result)")}
     assert "false_positive" in columns
+
+
+def test_session_has_citation_warnings_column(tmp_path):
+    conn = get_connection(tmp_path / "test.db")
+    init_db(conn)
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(session)")}
+    assert "citation_warnings" in columns
+
+
+def test_citation_warnings_migration_is_safe_to_run_twice(tmp_path):
+    conn = get_connection(tmp_path / "test.db")
+    init_db(conn)
+    init_db(conn)
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(session)")}
+    assert "citation_warnings" in columns
