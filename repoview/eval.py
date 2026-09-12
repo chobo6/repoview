@@ -57,55 +57,57 @@ def run_eval(
         is_negative = case["category"] == NEGATIVE_CATEGORY
 
         started = time.monotonic()
+        session_id = None
+        detected = 0
+        false_positive = 0
+        reason = ""
         try:
             result = run_session(
                 conn, repo_id, case["question"], llm,
                 model=model, phase=phase, embedding_client=embedding_client,
             )
-        except Exception as exc:
-            _record_eval_result(
-                conn, eval_run_id, case["id"], None, 0, 0,
-                f"ERROR: {type(exc).__name__}: {exc}",
+            session_id = result.session_id
+            latency_ms = int((time.monotonic() - started) * 1000)
+            review = result.final_review or ""
+
+            citations = extract_citations(review)
+            citation_total += len(citations)
+            citation_hits += sum(
+                1 for c in citations if _citation_path_exists(conn, repo_id, c["file_path"])
             )
+
+            verdict, reason = judge_case(
+                judge_llm, case["question"], case["expected_finding"], review,
+                is_negative=is_negative,
+            )
+
             if is_negative:
-                negative_total += 1
+                detected = 0 if verdict else 1
+                false_positive = 1 if verdict else 0
             else:
-                positive_total += 1
-            continue
-        latency_ms = int((time.monotonic() - started) * 1000)
-        review = result.final_review or ""
+                file_match = (
+                    case["expected_file_path"] is None
+                    or matches_file(
+                        citations, case["expected_file_path"],
+                        case["expected_line_start"], case["expected_line_end"],
+                    )
+                )
+                detected = 1 if (verdict and file_match) else 0
 
-        citations = extract_citations(review)
-        citation_total += len(citations)
-        citation_hits += sum(
-            1 for c in citations if _citation_path_exists(conn, repo_id, c["file_path"])
-        )
-
-        verdict, reason = judge_case(
-            judge_llm, case["question"], case["expected_finding"], review,
-            is_negative=is_negative,
-        )
+            total_cost += estimate_cost_usd(model, result.input_tokens, result.output_tokens)
+            total_latency_ms += latency_ms
+        except Exception as exc:
+            reason = f"ERROR: {type(exc).__name__}: {exc}"
 
         if is_negative:
             negative_total += 1
-            detected = 0 if verdict else 1
-            false_positive = 1 if verdict else 0
             false_positives += false_positive
         else:
             positive_total += 1
-            file_match = (
-                case["expected_file_path"] is None
-                or matches_file(citations, case["expected_file_path"])
-            )
-            detected = 1 if (verdict and file_match) else 0
             positive_passed += detected
-            false_positive = 0
-
-        total_cost += estimate_cost_usd(model, result.input_tokens, result.output_tokens)
-        total_latency_ms += latency_ms
 
         _record_eval_result(
-            conn, eval_run_id, case["id"], result.session_id, detected, false_positive, reason,
+            conn, eval_run_id, case["id"], session_id, detected, false_positive, reason,
         )
 
     stats = {

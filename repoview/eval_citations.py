@@ -20,7 +20,20 @@ def extract_citations(text: str) -> list[dict]:
     return citations
 
 
-def matches_file(citations: list[dict], expected_file_path: str) -> bool:
-    """추출된 인용 중 expected_file_path와 일치하는 것이 있는지 확인한다."""
+def matches_file(
+    citations: list[dict],
+    expected_file_path: str,
+    expected_line_start: int | None = None,
+    expected_line_end: int | None = None,
+) -> bool:
+    """추출된 인용 중 expected_file_path와 일치하고(있다면) 줄 범위도 겹치는 것이 있는지 확인한다."""
     normalized = expected_file_path.replace("\\", "/")
-    return any(c["file_path"].replace("\\", "/") == normalized for c in citations)
+    line_end = expected_line_end or expected_line_start
+    for c in citations:
+        if c["file_path"].replace("\\", "/") != normalized:
+            continue
+        if expected_line_start is None:
+            return True
+        if c["start_line"] <= line_end and c["end_line"] >= expected_line_start:
+            return True
+    return False
