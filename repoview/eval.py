@@ -9,7 +9,7 @@ from repoview.agent.loop import run_session
 from repoview.config import JUDGE_MODEL, MODEL_PRICING, OPENAI_MODEL, REPOS
 from repoview.db import get_connection, init_db
 from repoview.embedding_client import OpenAIEmbeddingClient
-from repoview.eval_citations import extract_citations, matches_file
+from repoview.eval_citations import extract_citations, matches_file, normalize_path
 from repoview.eval_judge import judge_case
 
 NEGATIVE_CATEGORY = "negative"
@@ -133,7 +133,7 @@ def run_eval(
 def _citation_path_exists(conn: sqlite3.Connection, repo_id: int, file_path: str) -> bool:
     row = conn.execute(
         "SELECT 1 FROM repo_file WHERE repo_id = ? AND path = ?",
-        (repo_id, file_path.replace("\\", "/")),
+        (repo_id, normalize_path(file_path)),
     ).fetchone()
     return row is not None
 

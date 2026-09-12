@@ -86,12 +86,13 @@ def run_session(
                 )
                 latency_ms = int((time.monotonic() - started) * 1000)
 
-                call_key = (call.name, json.dumps(call.arguments, sort_keys=True, ensure_ascii=False))
+                args_json = json.dumps(call.arguments, sort_keys=True, ensure_ascii=False)
+                call_key = (call.name, args_json)
                 call_counts[call_key] = call_counts.get(call_key, 0) + 1
                 if call_counts[call_key] >= 3:
                     result += "\n\n이미 동일한 검색을 수행했습니다. 다른 접근을 시도하거나 결론을 내리세요."
 
-                _record_tool_step(conn, session_id, step_no, call, result, latency_ms)
+                _record_tool_step(conn, session_id, step_no, call, args_json, result, latency_ms)
                 messages.append(
                     {"role": "tool", "tool_call_id": call.id, "content": result}
                 )
@@ -175,7 +176,7 @@ def _record_llm_step(conn, session_id: int, step_no: int, response) -> None:
 
 
 def _record_tool_step(
-    conn, session_id: int, step_no: int, call, result: str, latency_ms: int
+    conn, session_id: int, step_no: int, call, args_json: str, result: str, latency_ms: int
 ) -> None:
     conn.execute(
         """
@@ -188,7 +189,7 @@ def _record_tool_step(
             session_id,
             step_no,
             call.name,
-            json.dumps(call.arguments, ensure_ascii=False),
+            args_json,
             result[:MAX_TRACE_RESULT_CHARS],
             len(result),
             latency_ms,

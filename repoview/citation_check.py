@@ -1,8 +1,7 @@
-import posixpath
 import re
 import sqlite3
 
-from repoview.eval_citations import extract_citations
+from repoview.eval_citations import extract_citations, normalize_path, ranges_overlap
 
 _READ_RESULT_RE = re.compile(r"^(.+?) \((\d+)-(\d+)행\)")
 
@@ -35,7 +34,7 @@ def _check_one(
     read_ranges: list[tuple[str, int, int]],
     citation: dict,
 ) -> str | None:
-    normalized_path = posixpath.normpath(citation["file_path"].replace("\\", "/"))
+    normalized_path = normalize_path(citation["file_path"])
     row = conn.execute(
         "SELECT line_count FROM repo_file WHERE repo_id = ? AND path = ?",
         (repo_id, normalized_path),
@@ -58,9 +57,9 @@ def _was_read(
     read_ranges: list[tuple[str, int, int]], normalized_path: str, start_line: int, end_line: int
 ) -> bool:
     for path, read_start, read_end in read_ranges:
-        if posixpath.normpath(path.replace("\\", "/")) != normalized_path:
+        if normalize_path(path) != normalized_path:
             continue
-        if read_start <= end_line and read_end >= start_line:
+        if ranges_overlap(read_start, read_end, start_line, end_line):
             return True
     return False
 
