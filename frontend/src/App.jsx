@@ -3,6 +3,15 @@ import { createSession, fetchRepos, fetchSession } from './api'
 import EvalResults from './EvalResults'
 import './App.css'
 
+function parseCitationWarnings(raw) {
+  if (!raw) return []
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return []
+  }
+}
+
 function App() {
   const [repos, setRepos] = useState([])
   const [repoId, setRepoId] = useState(null)
@@ -85,6 +94,19 @@ function App() {
                 {session.input_tokens + session.output_tokens}
               </p>
               <pre className="review">{session.final_review}</pre>
+
+              {parseCitationWarnings(session.citation_warnings).length > 0 && (
+                <div className="citation-warning">
+                  ⚠ 인용 검증 경고 {parseCitationWarnings(session.citation_warnings).length}건
+                  <ul>
+                    {parseCitationWarnings(session.citation_warnings).map((w, i) => (
+                      <li key={i}>
+                        {w.file_path}:{w.start_line}-{w.end_line} — {w.issue}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               <h3>에이전트 트레이스</h3>
               <ol className="trace">

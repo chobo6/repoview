@@ -5,6 +5,15 @@ function formatPercent(value) {
   return value == null ? '-' : `${Math.round(value * 100)}%`
 }
 
+function parseCitationWarnings(raw) {
+  if (!raw) return []
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return []
+  }
+}
+
 function EvalResults({ repos }) {
   const [repoId, setRepoId] = useState(repos[0]?.id ?? null)
   const [runs, setRuns] = useState([])
@@ -123,6 +132,18 @@ function EvalResults({ repos }) {
         <section className="result">
           <h3>세션 리뷰</h3>
           <pre className="review">{session.final_review}</pre>
+          {parseCitationWarnings(session.citation_warnings).length > 0 && (
+            <div className="citation-warning">
+              ⚠ 인용 검증 경고 {parseCitationWarnings(session.citation_warnings).length}건
+              <ul>
+                {parseCitationWarnings(session.citation_warnings).map((w, i) => (
+                  <li key={i}>
+                    {w.file_path}:{w.start_line}-{w.end_line} — {w.issue}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
       )}
     </div>

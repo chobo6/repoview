@@ -99,3 +99,17 @@ button {
 .eval-detail li.false-positive {
   background: #fdecea;
 }
+
+.citation-warning {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: #fff8e1;
+  border: 1px solid #f0c14b;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.citation-warning ul {
+  margin: 4px 0 0;
+  padding-left: 20px;
+}
