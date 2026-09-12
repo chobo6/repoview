@@ -1,6 +1,10 @@
 import hashlib
+import time
 
 from repoview.config import EMBEDDING_MODEL
+
+EMBED_MAX_RETRIES = 5
+EMBED_RETRY_SECONDS = 15
 
 
 class OpenAIEmbeddingClient:
@@ -11,8 +15,20 @@ class OpenAIEmbeddingClient:
         self._client = OpenAI()
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        response = self._client.embeddings.create(input=texts, model=self.model)
-        return [item.embedding for item in response.data]
+        from openai import RateLimitError
+
+        for attempt in range(EMBED_MAX_RETRIES):
+            try:
+                response = self._client.embeddings.create(input=texts, model=self.model)
+                return [item.embedding for item in response.data]
+            except RateLimitError:
+                if attempt == EMBED_MAX_RETRIES - 1:
+                    raise
+                # ponytail: 분당 토큰(TPM) 누적 한도에 걸린 경우 대비 — 고정 대기 후
+                # 재시도. 요청 자체가 한도보다 큰 경우는 EMBED_BATCH_CHAR_BUDGET을
+                # 낮춰야 해결되며, 이 재시도는 그 경우를 돕지 못한다.
+                time.sleep(EMBED_RETRY_SECONDS)
+        raise AssertionError("unreachable")
 
 
 class FakeEmbeddingClient:

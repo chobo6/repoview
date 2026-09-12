@@ -1,0 +1,56 @@
+[
+  {
+    "question": "Docker 빌드 시 서버 컴파일 산출물이 이미지에 새어 들어갈 위험 있어?",
+    "expected_finding": ".dockerignore가 client/dist만 제외하고 server/dist(또는 **/dist) 재귀 패턴이 없어, 로컬에 컴파일된 server/dist가 있으면 Dockerfile의 COPY server/ server/로 그대로 이미지에 들어간다",
+    "expected_file_path": ".dockerignore",
+    "expected_line_start": 5,
+    "expected_line_end": 5,
+    "category": "dockerignore_recursive_gap",
+    "is_planted": 0
+  },
+  {
+    "question": "방 목록 조회(/api/rooms) API에 성능 문제 있어?",
+    "expected_finding": "방 목록을 필터링하면서 방마다 findUserByNickname과 getUserById를 호출해 밴 여부를 확인하는 N+1 쿼리가, 2초마다 폴링되는 공개 엔드포인트에서 발생한다",
+    "expected_file_path": "server/src/createServer.ts",
+    "expected_line_start": 118,
+    "expected_line_end": 125,
+    "category": "n_plus_one",
+    "is_planted": 1
+  },
+  {
+    "question": "세션 JWT 서명 키 관리에 보안 문제 있어?",
+    "expected_finding": "signSession이 SESSION_JWT_SECRET 미설정 시 예외를 던지는 대신 하드코딩된 fallback 문자열을 사용해, 프로덕션에서도 알려진 고정 시크릿으로 서명될 위험이 있다",
+    "expected_file_path": "server/src/auth/session.ts",
+    "expected_line_start": 8,
+    "expected_line_end": 8,
+    "category": "hardcoded_secret",
+    "is_planted": 1
+  },
+  {
+    "question": "colyseus 모듈이 CJS/ESM으로 이중 로드될 위험 있어?",
+    "expected_finding": "server/package.json이 이미 type: module로 설정되어 있어 이중 로드 문제가 없다",
+    "expected_file_path": "server/package.json",
+    "expected_line_start": 5,
+    "expected_line_end": 5,
+    "category": "negative",
+    "is_planted": 0
+  },
+  {
+    "question": "재접속 시 인증(밴 여부) 우회 취약점 있어?",
+    "expected_finding": "allowReconnection 성공 직후 최신 밴 상태를 다시 조회해 밴된 유저를 쫓아내는 재검증 로직이 이미 있어 우회 취약점이 없다",
+    "expected_file_path": "server/src/rooms/MatchRoom.ts",
+    "expected_line_start": 436,
+    "expected_line_end": 463,
+    "category": "negative",
+    "is_planted": 0
+  },
+  {
+    "question": "TeamComboBadge 컴포넌트에 문제 있어?",
+    "expected_finding": "단순 표시용 컴포넌트로 문제가 없다",
+    "expected_file_path": "client/src/components/TeamComboBadge.tsx",
+    "expected_line_start": 1,
+    "expected_line_end": 6,
+    "category": "negative",
+    "is_planted": 0
+  }
+]

@@ -6,8 +6,15 @@ from chromadb.errors import NotFoundError
 from repoview.config import CHUNK_LINES, CHUNK_OVERLAP
 from repoview.tools.search import iter_code_files
 
-MAX_CHUNK_CHARS = 20_000
-EMBED_BATCH_CHAR_BUDGET = 400_000
+# ponytail: OpenAI 임베딩 모델의 입력 한도는 8192 토큰. 20,000자는 영문/코드
+# 기준으로는 안전하지만, 한글/CJK 주석이 많은 청크는 토큰 밀도가 훨씬 높아
+# (한글은 대략 1~1.5자/토큰) 실제로 이 한도를 넘겨 400 에러가 났다. tiktoken
+# 없이 문자 수만으로 근사하므로 CJK 최악의 경우까지 감안해 보수적으로 낮춤.
+MAX_CHUNK_CHARS = 6_000
+# ponytail: 400_000자는 TPM(분당 토큰) 40,000짜리 낮은 티어 계정에서 "Request too
+# large" 429를 유발한다(코드 텍스트는 대략 3.8자/토큰). 여유를 두고 100_000자로 낮춤 —
+# 계정 티어가 높다면 처리량을 위해 다시 올려도 됨.
+EMBED_BATCH_CHAR_BUDGET = 100_000
 
 
 def chunk_file(path: Path, root: Path) -> list[dict]:
