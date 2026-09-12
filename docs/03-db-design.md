@@ -96,6 +96,7 @@ CREATE TABLE eval_case (
 
 CREATE TABLE eval_run (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo_id        INTEGER REFERENCES repo(id),  -- 어느 레포에 대한 실행인지 (조회 API가 필터링에 씀)
     phase          INTEGER NOT NULL,
     model          TEXT    NOT NULL,
     total_cases    INTEGER DEFAULT 0,
