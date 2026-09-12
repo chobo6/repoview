@@ -8,6 +8,7 @@ import chromadb
 from chromadb.errors import NotFoundError
 
 from repoview.agent.prompts import build_repo_overview, build_system_prompt
+from repoview.citation_check import verify_citations
 from repoview.config import CHROMA_PATH, CURRENT_PHASE, MAX_ITERATIONS, MAX_SESSION_TOKENS
 from repoview.embedder import collection_name
 from repoview.tools import TOOL_SCHEMAS, dispatch
@@ -69,7 +70,7 @@ def run_session(
 
             if not response.tool_calls:
                 return _finish(
-                    conn, session_id, "COMPLETED", response.text, iteration, totals
+                    conn, repo_id, session_id, "COMPLETED", response.text, iteration, totals
                 )
 
             for call in response.tool_calls:
@@ -109,10 +110,10 @@ def run_session(
         step_no += 1
         _record_llm_step(conn, session_id, step_no, summary)
 
-        return _finish(conn, session_id, "CAPPED", summary.text, iteration, totals)
+        return _finish(conn, repo_id, session_id, "CAPPED", summary.text, iteration, totals)
     except Exception as exc:
         _finish(
-            conn, session_id, "FAILED", None, iteration, totals,
+            conn, repo_id, session_id, "FAILED", None, iteration, totals,
             error=f"{type(exc).__name__}: {exc}",
         )
         raise
@@ -195,6 +196,7 @@ def _record_tool_step(
 
 def _finish(
     conn,
+    repo_id: int,
     session_id: int,
     status: str,
     final_review: str | None,
@@ -202,14 +204,24 @@ def _finish(
     totals: dict,
     error: str | None = None,
 ) -> SessionResult:
+    citation_warnings = None
+    if final_review:
+        warnings = verify_citations(conn, repo_id, session_id, final_review)
+        if warnings:
+            citation_warnings = json.dumps(warnings, ensure_ascii=False)
+
     conn.execute(
         """
         UPDATE session
         SET status = ?, final_review = ?, iteration_count = ?,
-            input_tokens = ?, output_tokens = ?, error = ?, finished_at = datetime('now')
+            input_tokens = ?, output_tokens = ?, error = ?,
+            citation_warnings = ?, finished_at = datetime('now')
         WHERE id = ?
         """,
-        (status, final_review, iteration, totals["input"], totals["output"], error, session_id),
+        (
+            status, final_review, iteration, totals["input"], totals["output"], error,
+            citation_warnings, session_id,
+        ),
     )
     conn.commit()
     return SessionResult(

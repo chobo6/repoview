@@ -253,3 +253,24 @@ def test_does_not_inject_notice_for_different_arguments(conn, repo_id):
         ).fetchall()
     ]
     assert all("이미 동일한 검색을 수행했습니다" not in r for r in tool_results)
+
+
+def test_citation_warnings_recorded_when_review_cites_unread_file(conn, repo_id):
+    llm = FakeLLM([
+        make_text_response("문제: 있음\n근거: `no/such/file.py:1`\n영향: -\n제안: -")
+    ])
+    result = run_session(conn, repo_id, "질문", llm)
+    row = conn.execute(
+        "SELECT citation_warnings FROM session WHERE id = ?", (result.session_id,)
+    ).fetchone()
+    assert row["citation_warnings"] is not None
+    assert "no/such/file.py" in row["citation_warnings"]
+
+
+def test_citation_warnings_is_none_when_no_issues(conn, repo_id):
+    llm = FakeLLM([make_text_response("문제를 발견하지 못했습니다")])
+    result = run_session(conn, repo_id, "질문", llm)
+    row = conn.execute(
+        "SELECT citation_warnings FROM session WHERE id = ?", (result.session_id,)
+    ).fetchone()
+    assert row["citation_warnings"] is None
