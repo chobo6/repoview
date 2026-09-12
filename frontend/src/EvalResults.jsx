@@ -12,10 +12,17 @@ function EvalResults({ repos }) {
   const [session, setSession] = useState(null)
   const [error, setError] = useState(null)
 
+  // repos는 App.jsx가 마운트 후 비동기로 채운다 — "Eval 결과" 탭을 그 전에 열면
+  // repoId가 null로 굳어 목록이 영영 안 뜨므로, repos가 나중에 채워지면 다시 맞춘다.
+  useEffect(() => {
+    if (repoId == null && repos.length > 0) setRepoId(repos[0].id)
+  }, [repos, repoId])
+
   useEffect(() => {
     if (!repoId) return
     setSelectedRun(null)
     setSession(null)
+    setError(null)
     fetchEvalRuns(repoId)
       .then(setRuns)
       .catch((err) => setError(err.message))
@@ -23,6 +30,7 @@ function EvalResults({ repos }) {
 
   const handleSelectRun = async (runId) => {
     setSession(null)
+    setError(null)
     try {
       setSelectedRun(await fetchEvalRun(runId))
     } catch (err) {
@@ -32,6 +40,7 @@ function EvalResults({ repos }) {
 
   const handleViewSession = async (sessionId) => {
     if (!sessionId) return
+    setError(null)
     try {
       setSession(await fetchSession(sessionId))
     } catch (err) {
@@ -77,7 +86,7 @@ function EvalResults({ repos }) {
               <td>{formatPercent(run.fpr)}</td>
               <td>{formatPercent(run.citation_accuracy)}</td>
               <td>${run.avg_cost_usd?.toFixed(4) ?? '-'}</td>
-              <td>{run.avg_latency_ms ? `${Math.round(run.avg_latency_ms)}ms` : '-'}</td>
+              <td>{run.avg_latency_ms != null ? `${Math.round(run.avg_latency_ms)}ms` : '-'}</td>
               <td>{run.started_at}</td>
             </tr>
           ))}

@@ -1,4 +1,3 @@
-import json
 import pytest
 from fastapi.testclient import TestClient
 
@@ -128,13 +127,11 @@ def test_list_eval_runs_returns_runs_for_repo(client, conn):
     conn.execute(
         """
         INSERT INTO eval_run
-            (repo_id, phase, model, total_cases, passed_cases, detection_rate, notes)
-        VALUES (?, 2, 'gpt-4o', 1, 1, 1.0, ?)
+            (repo_id, phase, model, total_cases, passed_cases, detection_rate,
+             fpr, citation_accuracy, avg_cost_usd, avg_latency_ms)
+        VALUES (?, 2, 'gpt-4o', 1, 1, 1.0, 0.0, 1.0, 0.0124, 5120)
         """,
-        (repo_id, json.dumps({
-            "fpr": 0.0, "citation_accuracy": 1.0,
-            "avg_cost_usd": 0.0124, "avg_latency_ms": 5120,
-        })),
+        (repo_id,),
     )
     conn.commit()
 
@@ -162,6 +159,22 @@ def test_list_eval_runs_without_filter_returns_all(client, conn):
     response = client.get("/api/evals/runs")
     assert response.status_code == 200
     assert len(response.json()) == 1
+
+
+def test_list_eval_runs_includes_rows_with_null_repo_id(client, conn):
+    # repo_id 백필이 실패할 수 있는 행(예: 매칭되는 eval_result가 없는 오래된 행)도
+    # 조용히 숨겨지면 안 된다 — INNER JOIN이면 이런 행이 사라진다.
+    conn.execute(
+        "INSERT INTO eval_run (repo_id, phase, model, notes) VALUES (NULL, 2, 'gpt-4o', '{}')"
+    )
+    conn.commit()
+
+    response = client.get("/api/evals/runs")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["repo_id"] is None
+    assert body[0]["repo_name"] is None
 
 
 def test_get_eval_run_detail_includes_case_results(client, conn):

@@ -170,13 +170,19 @@ def _finish_eval_run(conn: sqlite3.Connection, eval_run_id: int, stats: dict) ->
     conn.execute(
         """
         UPDATE eval_run
-        SET total_cases = ?, passed_cases = ?, detection_rate = ?, notes = ?, finished_at = datetime('now')
+        SET total_cases = ?, passed_cases = ?, detection_rate = ?,
+            fpr = ?, citation_accuracy = ?, avg_cost_usd = ?, avg_latency_ms = ?,
+            notes = ?, finished_at = datetime('now')
         WHERE id = ?
         """,
         (
             stats["total_cases"],
             stats["passed_cases"],
             stats["detection_rate"],
+            stats["fpr"],
+            stats["citation_accuracy"],
+            stats["avg_cost_usd"],
+            stats["avg_latency_ms"],
             json.dumps(stats, ensure_ascii=False),
             eval_run_id,
         ),

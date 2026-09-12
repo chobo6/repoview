@@ -96,7 +96,7 @@ data: {"step_no": 3, "result_preview": "12 matches in 5 files...", "latency_ms":
 ]
 ```
 
-`fpr`/`citation_accuracy`/`avg_cost_usd`/`avg_latency_ms`는 `eval_run.notes`(JSON)에 저장된 값을 최상위로 펼친 것 — `notes`를 그대로 클라이언트에 넘기지 않는다.
+`fpr`/`citation_accuracy`/`avg_cost_usd`/`avg_latency_ms`는 `eval_run`의 실제 컬럼이다(원래는 `notes` JSON에만 있어서 읽을 때마다 파싱이 필요했지만, 그 파싱을 까먹는 새 소비자가 생길 위험을 없애려고 컬럼으로 승격했다 — `docs/03-db-design.md` 참고). `notes`는 감사용 원본 JSON으로 남아있지만 그대로 클라이언트에 넘기지 않는다.
 
 **응답 예시 — `GET /evals/runs/8`**
 

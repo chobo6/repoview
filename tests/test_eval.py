@@ -157,6 +157,27 @@ def test_run_eval_records_repo_id_on_eval_run(conn, repo_id, seeded_cases):
     assert run_row["repo_id"] == repo_id
 
 
+def test_run_eval_records_stats_as_real_columns_on_eval_run(conn, repo_id, seeded_cases):
+    positive = [c for c in seeded_cases if c["category"] != "negative"]
+    llm = FakeLLM([
+        make_text_response(
+            "문제: N+1 쿼리\n근거: `src/main/java/com/example/UserService.java:11-14`\n"
+            "영향: 느림\n제안: JOIN 사용"
+        )
+    ])
+    judge_llm = FakeLLM([make_text_response("YES\n확인됨")])
+
+    run_eval(conn, repo_id, positive, llm, judge_llm, model="gpt-4o", phase=2)
+
+    run_row = conn.execute(
+        "SELECT fpr, citation_accuracy, avg_cost_usd, avg_latency_ms FROM eval_run"
+    ).fetchone()
+    assert run_row["fpr"] == 0.0
+    assert run_row["citation_accuracy"] == 1.0
+    assert run_row["avg_cost_usd"] > 0
+    assert run_row["avg_latency_ms"] >= 0
+
+
 def test_run_eval_isolates_case_failure_and_still_finishes_run(conn, repo_id, seeded_cases):
     # llm has no prepared responses, so run_session's first llm.call() raises immediately
     # for every case (FakeLLM raises AssertionError when responses are exhausted).

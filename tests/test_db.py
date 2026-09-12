@@ -100,3 +100,36 @@ def test_eval_run_repo_id_is_backfilled_from_existing_eval_results(tmp_path):
 
     row = conn.execute("SELECT repo_id FROM eval_run WHERE id = 1").fetchone()
     assert row["repo_id"] == 1
+
+
+def test_eval_run_has_stat_columns(tmp_path):
+    conn = get_connection(tmp_path / "test.db")
+    init_db(conn)
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(eval_run)")}
+    assert {"fpr", "citation_accuracy", "avg_cost_usd", "avg_latency_ms"} <= columns
+
+
+def test_eval_run_stat_columns_are_backfilled_from_notes(tmp_path):
+    conn = get_connection(tmp_path / "test.db")
+    init_db(conn)
+
+    conn.execute("INSERT INTO repo (id, name, root_path) VALUES (1, 'R', '/r')")
+    conn.execute(
+        """
+        INSERT INTO eval_run (id, repo_id, phase, model, notes)
+        VALUES (1, 1, 2, 'gpt-4o', '{"fpr": 0.5, "citation_accuracy": 1.0, "avg_cost_usd": 0.01, "avg_latency_ms": 1200}')
+        """
+    )
+    conn.commit()
+
+    # 위 INSERT는 fpr 등 실제 컬럼을 명시하지 않았으므로 NULL이다.
+    # init_db를 다시 태워 notes에서 백필되는지 확인한다.
+    init_db(conn)
+
+    row = conn.execute(
+        "SELECT fpr, citation_accuracy, avg_cost_usd, avg_latency_ms FROM eval_run WHERE id = 1"
+    ).fetchone()
+    assert row["fpr"] == 0.5
+    assert row["citation_accuracy"] == 1.0
+    assert row["avg_cost_usd"] == 0.01
+    assert row["avg_latency_ms"] == 1200

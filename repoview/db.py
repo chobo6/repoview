@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from pathlib import Path
 
@@ -143,3 +144,31 @@ def _migrate(conn: sqlite3.Connection) -> None:
         WHERE repo_id IS NULL
         """
     )
+
+    if "fpr" not in eval_run_columns:
+        conn.execute("ALTER TABLE eval_run ADD COLUMN fpr REAL")
+    if "citation_accuracy" not in eval_run_columns:
+        conn.execute("ALTER TABLE eval_run ADD COLUMN citation_accuracy REAL")
+    if "avg_cost_usd" not in eval_run_columns:
+        conn.execute("ALTER TABLE eval_run ADD COLUMN avg_cost_usd REAL")
+    if "avg_latency_ms" not in eval_run_columns:
+        conn.execute("ALTER TABLE eval_run ADD COLUMN avg_latency_ms REAL")
+
+    # notes(JSON)에만 있던 통계를 실제 컬럼으로 백필한다 — fpr이 비어있고 notes가
+    # 있는 행만 대상이라 매번 호출해도 안전하고, 이미 채워진 행은 건드리지 않는다.
+    for row in conn.execute(
+        "SELECT id, notes FROM eval_run WHERE fpr IS NULL AND notes IS NOT NULL"
+    ).fetchall():
+        stats = json.loads(row["notes"])
+        conn.execute(
+            """
+            UPDATE eval_run
+            SET fpr = ?, citation_accuracy = ?, avg_cost_usd = ?, avg_latency_ms = ?
+            WHERE id = ?
+            """,
+            (
+                stats.get("fpr"), stats.get("citation_accuracy"),
+                stats.get("avg_cost_usd"), stats.get("avg_latency_ms"),
+                row["id"],
+            ),
+        )

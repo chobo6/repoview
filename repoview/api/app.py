@@ -1,4 +1,3 @@
-import json
 import sqlite3
 from contextlib import asynccontextmanager
 
@@ -165,12 +164,11 @@ def get_session(session_id: int, conn: sqlite3.Connection = Depends(get_db)) -> 
     return {**dict(row), "trace": [dict(step) for step in trace]}
 
 
-def _expand_eval_run_notes(row: dict) -> dict:
-    notes = json.loads(row.pop("notes", None) or "{}")
-    row["fpr"] = notes.get("fpr")
-    row["citation_accuracy"] = notes.get("citation_accuracy")
-    row["avg_cost_usd"] = notes.get("avg_cost_usd")
-    row["avg_latency_ms"] = notes.get("avg_latency_ms")
+def _drop_notes(row: dict) -> dict:
+    """notes는 eval.py가 감사용으로 남기는 원본 JSON 블롭이다 — fpr/citation_accuracy/
+    avg_cost_usd/avg_latency_ms는 전부 eval_run의 실제 컬럼으로도 저장되므로(하위
+    호환을 위해 마이그레이션이 notes에서도 백필한다), API 응답에서는 이 블롭만 뺀다."""
+    row.pop("notes", None)
     return row
 
 
@@ -182,7 +180,7 @@ def list_eval_runs(
     query = """
         SELECT eval_run.*, repo.name AS repo_name
         FROM eval_run
-        JOIN repo ON repo.id = eval_run.repo_id
+        LEFT JOIN repo ON repo.id = eval_run.repo_id
         WHERE 1 = 1
     """
     params: list = []
@@ -191,7 +189,7 @@ def list_eval_runs(
         params.append(repo_id)
     query += " ORDER BY eval_run.started_at DESC"
 
-    return [_expand_eval_run_notes(dict(row)) for row in conn.execute(query, params)]
+    return [_drop_notes(dict(row)) for row in conn.execute(query, params)]
 
 
 @app.get("/api/evals/runs/{run_id}")
@@ -200,7 +198,7 @@ def get_eval_run(run_id: int, conn: sqlite3.Connection = Depends(get_db)) -> dic
     if run_row is None:
         raise HTTPException(status_code=404, detail=f"eval 실행을 찾을 수 없습니다: {run_id}")
 
-    run = _expand_eval_run_notes(dict(run_row))
+    run = _drop_notes(dict(run_row))
 
     results = conn.execute(
         """
