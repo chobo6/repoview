@@ -45,20 +45,21 @@ CREATE TABLE repo_file (
 CREATE INDEX idx_repo_file_repo_path ON repo_file(repo_id, path);
 
 CREATE TABLE session (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    repo_id         INTEGER NOT NULL REFERENCES repo(id),
-    question        TEXT    NOT NULL,
-    status          TEXT    NOT NULL,       -- RUNNING | COMPLETED | FAILED | CAPPED
-    final_review    TEXT,
-    iteration_count INTEGER DEFAULT 0,
-    input_tokens    INTEGER DEFAULT 0,
-    output_tokens   INTEGER DEFAULT 0,
-    cost_usd        REAL    DEFAULT 0,
-    model           TEXT    NOT NULL,
-    phase           INTEGER NOT NULL,       -- 1~4: 어느 단계 구현으로 실행했는지
-    error           TEXT,
-    started_at      TEXT    NOT NULL DEFAULT (datetime('now')),
-    finished_at     TEXT
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo_id            INTEGER NOT NULL REFERENCES repo(id),
+    question           TEXT    NOT NULL,
+    status             TEXT    NOT NULL,    -- RUNNING | COMPLETED | FAILED | CAPPED
+    final_review       TEXT,
+    iteration_count    INTEGER DEFAULT 0,
+    input_tokens       INTEGER DEFAULT 0,
+    output_tokens      INTEGER DEFAULT 0,
+    cost_usd           REAL    DEFAULT 0,
+    model              TEXT    NOT NULL,
+    phase              INTEGER NOT NULL,    -- 1~4: 어느 단계 구현으로 실행했는지
+    error              TEXT,
+    citation_warnings  TEXT,                -- Phase 4: 인용 사후검증 실패 목록(JSON), 문제 없으면 NULL
+    started_at         TEXT    NOT NULL DEFAULT (datetime('now')),
+    finished_at        TEXT
 );
 CREATE INDEX idx_session_repo_started ON session(repo_id, started_at);
 
