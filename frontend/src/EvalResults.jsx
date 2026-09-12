@@ -82,10 +82,13 @@ function EvalResults({ repos }) {
             >
               <td>{run.phase}</td>
               <td>{run.model}</td>
-              <td>{formatPercent(run.detection_rate)}</td>
+              <td>
+                {formatPercent(run.detection_rate)}
+                {run.total_cases != null && ` (${run.passed_cases}/${run.total_cases})`}
+              </td>
               <td>{formatPercent(run.fpr)}</td>
               <td>{formatPercent(run.citation_accuracy)}</td>
-              <td>${run.avg_cost_usd?.toFixed(4) ?? '-'}</td>
+              <td>{run.avg_cost_usd != null ? `$${run.avg_cost_usd.toFixed(4)}` : '-'}</td>
               <td>{run.avg_latency_ms != null ? `${Math.round(run.avg_latency_ms)}ms` : '-'}</td>
               <td>{run.started_at}</td>
             </tr>
