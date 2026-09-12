@@ -185,3 +185,30 @@ def test_run_session_without_embedding_client_still_works(conn, repo_id):
     llm = FakeLLM([make_text_response("완료")])
     result = run_session(conn, repo_id, "질문", llm)
     assert result.status == "COMPLETED"
+
+
+def test_caps_when_cumulative_tokens_exceed_limit(conn, repo_id):
+    # make_tool_call_response는 input_tokens=100, output_tokens=20 고정이라
+    # 한 번만 호출해도 120토큰이 누적된다. max_session_tokens=100이면 그 자리에서
+    # (다음 라운드로 못 넘어가고) 바로 상한을 넘겨 반복 루프를 break하고,
+    # 기존 "반복 상한 도달" 요약 경로로 빠져 CAPPED가 되어야 한다.
+    llm = FakeLLM([
+        make_tool_call_response("search_code", {"pattern": "a"}),
+        make_text_response("토큰 상한 도달 후 요약"),
+    ])
+    result = run_session(conn, repo_id, "질문", llm, max_iterations=10, max_session_tokens=100)
+    assert result.status == "CAPPED"
+    assert result.final_review == "토큰 상한 도달 후 요약"
+    assert result.iteration_count == 1
+
+
+def test_does_not_cap_when_under_token_limit(conn, repo_id):
+    # 첫 라운드(120토큰 누적)가 상한(10,000)에 한참 못 미쳐 break하지 않고
+    # 두 번째 라운드로 정상 진행되어 COMPLETED로 끝나야 한다.
+    llm = FakeLLM([
+        make_tool_call_response("search_code", {"pattern": "a"}),
+        make_text_response("문제 없음"),
+    ])
+    result = run_session(conn, repo_id, "질문", llm, max_session_tokens=10_000)
+    assert result.status == "COMPLETED"
+    assert result.final_review == "문제 없음"

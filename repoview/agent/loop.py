@@ -8,7 +8,7 @@ import chromadb
 from chromadb.errors import NotFoundError
 
 from repoview.agent.prompts import build_repo_overview, build_system_prompt
-from repoview.config import CHROMA_PATH, CURRENT_PHASE, MAX_ITERATIONS
+from repoview.config import CHROMA_PATH, CURRENT_PHASE, MAX_ITERATIONS, MAX_SESSION_TOKENS
 from repoview.embedder import collection_name
 from repoview.tools import TOOL_SCHEMAS, dispatch
 
@@ -34,9 +34,11 @@ def run_session(
     model: str = "",
     phase: int = CURRENT_PHASE,
     max_iterations: int | None = None,
+    max_session_tokens: int | None = None,
     embedding_client=None,
 ) -> SessionResult:
     limit = max_iterations if max_iterations is not None else MAX_ITERATIONS
+    token_limit = max_session_tokens if max_session_tokens is not None else MAX_SESSION_TOKENS
     repo = conn.execute("SELECT * FROM repo WHERE id = ?", (repo_id,)).fetchone()
     if repo is None:
         raise ValueError(f"레포를 찾을 수 없습니다: {repo_id}")
@@ -84,6 +86,9 @@ def run_session(
                 messages.append(
                     {"role": "tool", "tool_call_id": call.id, "content": result}
                 )
+
+            if totals["input"] + totals["output"] > token_limit:
+                break
 
         # 반복 상한 도달: 도구 없이 한 번 더 호출해 지금까지 찾은 내용을 정리시킨다.
         messages.append(

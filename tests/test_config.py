@@ -22,3 +22,19 @@ def test_model_pricing_contains_known_models_with_positive_rates():
     for input_price, output_price in config.MODEL_PRICING.values():
         assert input_price > 0
         assert output_price > 0
+
+
+def test_max_iterations_default_is_six(monkeypatch):
+    monkeypatch.delenv("REPOVIEW_MAX_ITERATIONS", raising=False)
+    import importlib
+    from repoview import config
+    importlib.reload(config)
+    assert config.MAX_ITERATIONS == 6
+
+
+def test_max_session_tokens_default_is_fifty_thousand(monkeypatch):
+    monkeypatch.delenv("REPOVIEW_MAX_SESSION_TOKENS", raising=False)
+    import importlib
+    from repoview import config
+    importlib.reload(config)
+    assert config.MAX_SESSION_TOKENS == 50_000
