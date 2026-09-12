@@ -41,6 +41,18 @@ def test_iter_code_files_includes_java_and_ts(mini_repo):
     assert "api.ts" in names
 
 
+def test_iter_code_files_includes_root_config_files(mini_repo):
+    names = {p.name for p in iter_code_files(mini_repo)}
+    assert "Dockerfile" in names
+    assert ".gitignore" in names
+
+
+def test_iter_code_files_excludes_nested_config_files(mini_repo):
+    # frontend/Dockerfile은 루트가 아니라 하위 폴더라 포함되면 안 된다.
+    paths = [p.as_posix() for p in iter_code_files(mini_repo)]
+    assert not any(p.endswith("frontend/Dockerfile") for p in paths)
+
+
 def test_iter_code_files_skips_symlinks(mini_repo, monkeypatch):
     from pathlib import Path
 

@@ -9,6 +9,7 @@ from repoview.config import (
     EXCLUDED_DIRS,
     MAX_INDEXED_FILE_BYTES,
     MAX_SEARCH_RESULTS,
+    ROOT_CONFIG_FILENAMES,
 )
 
 MAX_LINE_PREVIEW = 200
@@ -18,9 +19,11 @@ def iter_code_files(repo_root: Path) -> Iterator[Path]:
     root = Path(repo_root)
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames if d not in EXCLUDED_DIRS)
+        is_root = Path(dirpath) == root
         for filename in sorted(filenames):
             path = Path(dirpath) / filename
-            if path.suffix.lower() not in CODE_EXTENSIONS:
+            is_root_config = is_root and filename in ROOT_CONFIG_FILENAMES
+            if path.suffix.lower() not in CODE_EXTENSIONS and not is_root_config:
                 continue
             if path.is_symlink():
                 # 심볼릭 링크는 레포 루트 밖을 가리킬 수 있어 read_file의

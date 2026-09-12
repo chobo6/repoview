@@ -25,6 +25,19 @@ def test_index_repo_detects_primary_language(conn, mini_repo):
     assert summary["primary_language"] == "java"
 
 
+def test_index_repo_indexes_root_config_files_as_config_language(conn, mini_repo):
+    summary = index_repo(conn, "MiniRepo", mini_repo)
+    row = conn.execute(
+        "SELECT language FROM repo_file WHERE repo_id = ? AND path = ?",
+        (summary["repo_id"], "Dockerfile"),
+    ).fetchone()
+    assert row is not None
+    assert row["language"] == "config"
+    # config 파일이 java보다 많아져도 primary_language는 여전히 java여야 한다
+    # (NON_SOURCE_LANGUAGES에 포함되어 집계에서 제외됨).
+    assert summary["primary_language"] == "java"
+
+
 def test_index_repo_detects_framework(conn, mini_repo):
     summary = index_repo(conn, "MiniRepo", mini_repo)
     assert "spring-mvc" in summary["framework"]

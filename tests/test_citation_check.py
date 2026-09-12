@@ -22,7 +22,7 @@ def _seed_session_with_read(conn, session_id, repo_id, path, start, end):
 def test_citation_with_no_issues_returns_empty_list(conn, mini_repo):
     repo_id = index_repo(conn, "MiniRepo", mini_repo)["repo_id"]
     row = conn.execute(
-        "SELECT path, line_count FROM repo_file WHERE repo_id = ? LIMIT 1", (repo_id,)
+        "SELECT path, line_count FROM repo_file WHERE repo_id = ? AND language != 'config' LIMIT 1", (repo_id,)
     ).fetchone()
     _seed_session_with_read(conn, session_id=1, repo_id=repo_id, path=row["path"], start=1, end=row["line_count"])
 
@@ -48,7 +48,7 @@ def test_citation_to_nonexistent_file_is_flagged(conn, mini_repo):
 def test_citation_not_actually_read_is_flagged(conn, mini_repo):
     repo_id = index_repo(conn, "MiniRepo", mini_repo)["repo_id"]
     row = conn.execute(
-        "SELECT path, line_count FROM repo_file WHERE repo_id = ? LIMIT 1", (repo_id,)
+        "SELECT path, line_count FROM repo_file WHERE repo_id = ? AND language != 'config' LIMIT 1", (repo_id,)
     ).fetchone()
     # read_file을 한 번도 호출하지 않은(트레이스가 없는) 세션인 상황을 재현한다.
 
@@ -61,7 +61,7 @@ def test_citation_not_actually_read_is_flagged(conn, mini_repo):
 def test_citation_beyond_file_length_is_flagged(conn, mini_repo):
     repo_id = index_repo(conn, "MiniRepo", mini_repo)["repo_id"]
     row = conn.execute(
-        "SELECT path, line_count FROM repo_file WHERE repo_id = ? LIMIT 1", (repo_id,)
+        "SELECT path, line_count FROM repo_file WHERE repo_id = ? AND language != 'config' LIMIT 1", (repo_id,)
     ).fetchone()
     beyond = row["line_count"] + 100
     _seed_session_with_read(conn, session_id=2, repo_id=repo_id, path=row["path"], start=1, end=row["line_count"])
@@ -78,7 +78,7 @@ def test_citation_with_valid_start_but_end_beyond_file_length_is_flagged(conn, m
     # "확인됨"으로 잘못 통과할 수 있다.
     repo_id = index_repo(conn, "MiniRepo", mini_repo)["repo_id"]
     row = conn.execute(
-        "SELECT path, line_count FROM repo_file WHERE repo_id = ? LIMIT 1", (repo_id,)
+        "SELECT path, line_count FROM repo_file WHERE repo_id = ? AND language != 'config' LIMIT 1", (repo_id,)
     ).fetchone()
     beyond = row["line_count"] + 100
     _seed_session_with_read(conn, session_id=6, repo_id=repo_id, path=row["path"], start=1, end=row["line_count"])
@@ -94,7 +94,7 @@ def test_citation_with_dot_slash_and_double_slash_is_recognized_as_read(conn, mi
     # posixpath.normpath로 정규화되어 "read_file로 확인하지 않은 인용"으로 오탐되면 안 된다.
     repo_id = index_repo(conn, "MiniRepo", mini_repo)["repo_id"]
     row = conn.execute(
-        "SELECT path, line_count FROM repo_file WHERE repo_id = ? LIMIT 1", (repo_id,)
+        "SELECT path, line_count FROM repo_file WHERE repo_id = ? AND language != 'config' LIMIT 1", (repo_id,)
     ).fetchone()
     _seed_session_with_read(conn, session_id=3, repo_id=repo_id, path=row["path"], start=1, end=row["line_count"])
 

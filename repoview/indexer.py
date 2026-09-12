@@ -7,6 +7,7 @@ from repoview.config import (
     CODE_EXTENSIONS,
     EXCLUDED_DIRS,
     NON_SOURCE_LANGUAGES,
+    ROOT_CONFIG_FILENAMES,
 )
 from repoview.tools.search import iter_code_files
 
@@ -60,7 +61,7 @@ def index_repo(conn: sqlite3.Connection, name: str, root: Path) -> dict:
     language_votes: Counter[str] = Counter()
 
     for path in files:
-        language = CODE_EXTENSIONS[path.suffix.lower()]
+        language = CODE_EXTENSIONS.get(path.suffix.lower()) or ROOT_CONFIG_FILENAMES[path.name]
         text = path.read_text(encoding="utf-8", errors="replace")
         rows.append(
             (

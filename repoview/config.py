@@ -35,8 +35,17 @@ CODE_EXTENSIONS: dict[str, str] = {
     ".md": "markdown",
 }
 
+# 확장자가 없는 레포 루트 설정 파일 — Path.suffix가 빈 문자열이라 CODE_EXTENSIONS로는
+# 못 잡는다. 파일명으로 직접 매칭하며, 레포 루트에 있을 때만 인덱싱 대상이다
+# (iter_code_files 참고). docker-compose.yml처럼 이미 확장자가 있는 파일은 여기 없어도 된다.
+ROOT_CONFIG_FILENAMES: dict[str, str] = {
+    "Dockerfile": "config", ".dockerignore": "config",
+    ".gitignore": "config", ".env.example": "config",
+    "Makefile": "config", ".editorconfig": "config",
+}
+
 # primary_language 집계에서 제외할 언어 (설정/문서 파일이 본체 언어를 가리는 것 방지)
-NON_SOURCE_LANGUAGES = {"json", "yaml", "markdown", "xml", "css", "html"}
+NON_SOURCE_LANGUAGES = {"json", "yaml", "markdown", "xml", "css", "html", "config"}
 
 CHUNK_LINES = 50
 CHUNK_OVERLAP = 10
