@@ -1,4 +1,24 @@
+import importlib
+
+import pytest
+
 from repoview import config
+
+
+@pytest.fixture
+def reloaded_config(monkeypatch):
+    """env var를 지운 채 config를 리로드해 순수 기본값을 확인하고, 테스트가 끝나면
+    monkeypatch가 되돌린 실제 환경 기준으로 config를 다시 리로드해 다른 테스트로
+    상태가 새지 않게 한다."""
+
+    def _reload(*env_names):
+        for name in env_names:
+            monkeypatch.delenv(name, raising=False)
+        importlib.reload(config)
+        return config
+
+    yield _reload
+    importlib.reload(config)
 
 
 def test_chunk_overlap_is_smaller_than_chunk_lines():
@@ -24,17 +44,9 @@ def test_model_pricing_contains_known_models_with_positive_rates():
         assert output_price > 0
 
 
-def test_max_iterations_default_is_six(monkeypatch):
-    monkeypatch.delenv("REPOVIEW_MAX_ITERATIONS", raising=False)
-    import importlib
-    from repoview import config
-    importlib.reload(config)
-    assert config.MAX_ITERATIONS == 6
+def test_max_iterations_default_is_six(reloaded_config):
+    assert reloaded_config("REPOVIEW_MAX_ITERATIONS").MAX_ITERATIONS == 6
 
 
-def test_max_session_tokens_default_is_fifty_thousand(monkeypatch):
-    monkeypatch.delenv("REPOVIEW_MAX_SESSION_TOKENS", raising=False)
-    import importlib
-    from repoview import config
-    importlib.reload(config)
-    assert config.MAX_SESSION_TOKENS == 50_000
+def test_max_session_tokens_default_is_fifty_thousand(reloaded_config):
+    assert reloaded_config("REPOVIEW_MAX_SESSION_TOKENS").MAX_SESSION_TOKENS == 50_000

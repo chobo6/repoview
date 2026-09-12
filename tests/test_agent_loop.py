@@ -293,6 +293,37 @@ def test_citation_warnings_is_none_when_no_issues(conn, repo_id):
     assert row["citation_warnings"] is None
 
 
+def test_repeat_call_notice_and_citation_warnings_both_apply_in_same_session(conn, repo_id):
+    # 반복 호출 감지(3회 이상 동일 호출 시 안내 주입)와 인용 사후검증은 서로 다른
+    # 지점(도구 디스패치 vs 세션 종료)에서 동작하는 독립된 Phase 4 기능이다 — 한
+    # 세션 안에서 둘 다 트리거돼도 서로 간섭 없이 각자 정상 동작해야 한다.
+    llm = FakeLLM([
+        make_tool_call_response("search_code", {"pattern": "x"}),
+        make_tool_call_response("search_code", {"pattern": "x"}),
+        make_tool_call_response("search_code", {"pattern": "x"}),
+        make_text_response("문제: 있음\n근거: `no/such/file.py:1`\n영향: -\n제안: -"),
+    ])
+    result = run_session(conn, repo_id, "질문", llm, max_iterations=10)
+    assert result.status == "COMPLETED"
+
+    tool_results = [
+        row["tool_result"]
+        for row in conn.execute(
+            "SELECT tool_result FROM trace_step WHERE session_id = ? AND type = 'TOOL_CALL' ORDER BY step_no",
+            (result.session_id,),
+        ).fetchall()
+    ]
+    assert len(tool_results) == 3
+    assert "이미 동일한 검색을 수행했습니다" in tool_results[2]
+
+    row = conn.execute(
+        "SELECT citation_warnings FROM session WHERE id = ?", (result.session_id,)
+    ).fetchone()
+    assert row["citation_warnings"] is not None
+    assert "no/such/file.py" in row["citation_warnings"]
+    assert "존재하지 않는 파일" in row["citation_warnings"]
+
+
 def test_verify_citations_exception_does_not_fail_completed_session(conn, repo_id, monkeypatch):
     # 인용 검증은 어드바이저리 기능이다 — verify_citations가 예외를 던져도
     # 이미 완료된 세션이 FAILED/final_review=None으로 덮어써지면 안 된다.
