@@ -109,4 +109,13 @@ def get_connection(db_path: Path | None = None) -> sqlite3.Connection:
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    _migrate(conn)
     conn.commit()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(eval_result)")}
+    if "false_positive" not in columns:
+        conn.execute(
+            "ALTER TABLE eval_result ADD COLUMN false_positive INTEGER NOT NULL DEFAULT 0"
+        )

@@ -42,3 +42,11 @@ CHUNK_OVERLAP = 10
 EMBEDDING_MODEL = os.getenv("REPOVIEW_EMBEDDING_MODEL", "text-embedding-3-small")
 DEFAULT_TOP_K = 5
 CHROMA_PATH = Path(os.getenv("REPOVIEW_CHROMA_PATH") or PROJECT_ROOT / "chroma_data")
+
+JUDGE_MODEL = os.getenv("REPOVIEW_JUDGE_MODEL", "gpt-4o-mini")
+
+MODEL_PRICING: dict[str, tuple[float, float]] = {
+    # (입력 $/1M 토큰, 출력 $/1M 토큰)
+    "gpt-4o-mini": (0.15, 0.60),
+    "gpt-4o": (2.50, 10.00),
+}
