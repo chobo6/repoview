@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from contextlib import asynccontextmanager
 
@@ -162,3 +163,58 @@ def get_session(session_id: int, conn: sqlite3.Connection = Depends(get_db)) -> 
         "SELECT * FROM trace_step WHERE session_id = ? ORDER BY step_no", (session_id,)
     ).fetchall()
     return {**dict(row), "trace": [dict(step) for step in trace]}
+
+
+def _expand_eval_run_notes(row: dict) -> dict:
+    notes = json.loads(row.pop("notes", None) or "{}")
+    row["fpr"] = notes.get("fpr")
+    row["citation_accuracy"] = notes.get("citation_accuracy")
+    row["avg_cost_usd"] = notes.get("avg_cost_usd")
+    row["avg_latency_ms"] = notes.get("avg_latency_ms")
+    return row
+
+
+@app.get("/api/evals/runs")
+def list_eval_runs(
+    repo_id: int | None = None,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[dict]:
+    query = """
+        SELECT eval_run.*, repo.name AS repo_name
+        FROM eval_run
+        JOIN repo ON repo.id = eval_run.repo_id
+        WHERE 1 = 1
+    """
+    params: list = []
+    if repo_id is not None:
+        query += " AND eval_run.repo_id = ?"
+        params.append(repo_id)
+    query += " ORDER BY eval_run.started_at DESC"
+
+    return [_expand_eval_run_notes(dict(row)) for row in conn.execute(query, params)]
+
+
+@app.get("/api/evals/runs/{run_id}")
+def get_eval_run(run_id: int, conn: sqlite3.Connection = Depends(get_db)) -> dict:
+    run_row = conn.execute("SELECT * FROM eval_run WHERE id = ?", (run_id,)).fetchone()
+    if run_row is None:
+        raise HTTPException(status_code=404, detail=f"eval 실행을 찾을 수 없습니다: {run_id}")
+
+    run = _expand_eval_run_notes(dict(run_row))
+
+    results = conn.execute(
+        """
+        SELECT
+            eval_result.eval_case_id, eval_result.session_id,
+            eval_result.detected, eval_result.false_positive, eval_result.judge_reason,
+            eval_case.question, eval_case.category, eval_case.is_planted,
+            eval_case.expected_finding
+        FROM eval_result
+        JOIN eval_case ON eval_case.id = eval_result.eval_case_id
+        WHERE eval_result.eval_run_id = ?
+        ORDER BY eval_result.id
+        """,
+        (run_id,),
+    ).fetchall()
+    run["results"] = [dict(r) for r in results]
+    return run
