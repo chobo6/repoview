@@ -162,3 +162,57 @@ def get_session(session_id: int, conn: sqlite3.Connection = Depends(get_db)) -> 
         "SELECT * FROM trace_step WHERE session_id = ? ORDER BY step_no", (session_id,)
     ).fetchall()
     return {**dict(row), "trace": [dict(step) for step in trace]}
+
+
+def _drop_notes(row: dict) -> dict:
+    """notes는 eval.py가 감사용으로 남기는 원본 JSON 블롭이다 — fpr/citation_accuracy/
+    avg_cost_usd/avg_latency_ms는 전부 eval_run의 실제 컬럼으로도 저장되므로(하위
+    호환을 위해 마이그레이션이 notes에서도 백필한다), API 응답에서는 이 블롭만 뺀다."""
+    row.pop("notes", None)
+    return row
+
+
+@app.get("/api/evals/runs")
+def list_eval_runs(
+    repo_id: int | None = None,
+    conn: sqlite3.Connection = Depends(get_db),
+) -> list[dict]:
+    query = """
+        SELECT eval_run.*, repo.name AS repo_name
+        FROM eval_run
+        LEFT JOIN repo ON repo.id = eval_run.repo_id
+        WHERE 1 = 1
+    """
+    params: list = []
+    if repo_id is not None:
+        query += " AND eval_run.repo_id = ?"
+        params.append(repo_id)
+    query += " ORDER BY eval_run.started_at DESC"
+
+    return [_drop_notes(dict(row)) for row in conn.execute(query, params)]
+
+
+@app.get("/api/evals/runs/{run_id}")
+def get_eval_run(run_id: int, conn: sqlite3.Connection = Depends(get_db)) -> dict:
+    run_row = conn.execute("SELECT * FROM eval_run WHERE id = ?", (run_id,)).fetchone()
+    if run_row is None:
+        raise HTTPException(status_code=404, detail=f"eval 실행을 찾을 수 없습니다: {run_id}")
+
+    run = _drop_notes(dict(run_row))
+
+    results = conn.execute(
+        """
+        SELECT
+            eval_result.eval_case_id, eval_result.session_id,
+            eval_result.detected, eval_result.false_positive, eval_result.judge_reason,
+            eval_case.question, eval_case.category, eval_case.is_planted,
+            eval_case.expected_finding
+        FROM eval_result
+        JOIN eval_case ON eval_case.id = eval_result.eval_case_id
+        WHERE eval_result.eval_run_id = ?
+        ORDER BY eval_result.id
+        """,
+        (run_id,),
+    ).fetchall()
+    run["results"] = [dict(r) for r in results]
+    return run

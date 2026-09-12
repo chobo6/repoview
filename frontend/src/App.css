@@ -57,3 +57,45 @@ button {
 .step.error pre {
   background: #fdecea;
 }
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.tabs button.active {
+  font-weight: bold;
+  text-decoration: underline;
+}
+
+.eval-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+}
+
+.eval-table th,
+.eval-table td {
+  border: 1px solid #ddd;
+  padding: 6px 8px;
+  text-align: left;
+  font-size: 14px;
+}
+
+.eval-table tr {
+  cursor: pointer;
+}
+
+.eval-table tr.selected {
+  background: #eef6ff;
+}
+
+.eval-detail li {
+  border-bottom: 1px solid #eee;
+  padding: 8px 0;
+}
+
+.eval-detail li.false-positive {
+  background: #fdecea;
+}

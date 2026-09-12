@@ -120,3 +120,113 @@ def test_create_session_still_works_with_real_embedding_client_dependency_overri
     repo_id = client.get("/api/repos").json()[0]["id"]
     response = client.post("/api/sessions", json={"repo_id": repo_id, "question": "질문"})
     assert response.status_code == 200
+
+
+def test_list_eval_runs_returns_runs_for_repo(client, conn):
+    repo_id = client.get("/api/repos").json()[0]["id"]
+    conn.execute(
+        """
+        INSERT INTO eval_run
+            (repo_id, phase, model, total_cases, passed_cases, detection_rate,
+             fpr, citation_accuracy, avg_cost_usd, avg_latency_ms)
+        VALUES (?, 2, 'gpt-4o', 1, 1, 1.0, 0.0, 1.0, 0.0124, 5120)
+        """,
+        (repo_id,),
+    )
+    conn.commit()
+
+    response = client.get(f"/api/evals/runs?repo_id={repo_id}")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["repo_name"] == "MiniRepo"
+    assert body[0]["detection_rate"] == 1.0
+    assert body[0]["fpr"] == 0.0
+    assert body[0]["citation_accuracy"] == 1.0
+    assert body[0]["avg_cost_usd"] == 0.0124
+    assert body[0]["avg_latency_ms"] == 5120
+    assert "notes" not in body[0]
+
+
+def test_list_eval_runs_without_filter_returns_all(client, conn):
+    repo_id = client.get("/api/repos").json()[0]["id"]
+    conn.execute(
+        "INSERT INTO eval_run (repo_id, phase, model, notes) VALUES (?, 2, 'gpt-4o', '{}')",
+        (repo_id,),
+    )
+    conn.commit()
+
+    response = client.get("/api/evals/runs")
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+
+
+def test_list_eval_runs_includes_rows_with_null_repo_id(client, conn):
+    # repo_id 백필이 실패할 수 있는 행(예: 매칭되는 eval_result가 없는 오래된 행)도
+    # 조용히 숨겨지면 안 된다 — INNER JOIN이면 이런 행이 사라진다.
+    conn.execute(
+        "INSERT INTO eval_run (repo_id, phase, model, notes) VALUES (NULL, 2, 'gpt-4o', '{}')"
+    )
+    conn.commit()
+
+    response = client.get("/api/evals/runs")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["repo_id"] is None
+    assert body[0]["repo_name"] is None
+
+
+def test_get_eval_run_detail_includes_case_results(client, conn):
+    repo_id = client.get("/api/repos").json()[0]["id"]
+
+    # Create a session for the eval_result to reference
+    cursor = conn.execute(
+        """
+        INSERT INTO session (repo_id, question, status, model, phase)
+        VALUES (?, 'test', 'COMPLETED', 'gpt-4o', 2)
+        """,
+        (repo_id,),
+    )
+    session_id = cursor.lastrowid
+
+    cursor = conn.execute(
+        """
+        INSERT INTO eval_case (repo_id, question, expected_finding, category)
+        VALUES (?, 'OrderController에 문제 있어?', '문제 없음', 'negative')
+        """,
+        (repo_id,),
+    )
+    eval_case_id = cursor.lastrowid
+    cursor = conn.execute(
+        "INSERT INTO eval_run (repo_id, phase, model, notes) VALUES (?, 2, 'gpt-4o', '{}')",
+        (repo_id,),
+    )
+    run_id = cursor.lastrowid
+    conn.execute(
+        """
+        INSERT INTO eval_result (eval_run_id, eval_case_id, session_id, detected, judge_reason)
+        VALUES (?, ?, ?, 1, '문제 없다고 정확히 판단함')
+        """,
+        (run_id, eval_case_id, session_id),
+    )
+    conn.commit()
+
+    response = client.get(f"/api/evals/runs/{run_id}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == run_id
+    assert len(body["results"]) == 1
+    result = body["results"][0]
+    assert result["question"] == "OrderController에 문제 있어?"
+    assert result["category"] == "negative"
+    assert result["is_planted"] == 0
+    assert result["detected"] == 1
+    assert result["judge_reason"] == "문제 없다고 정확히 판단함"
+    assert result["session_id"] == session_id
+
+
+def test_get_missing_eval_run_returns_404(client):
+    response = client.get("/api/evals/runs/9999")
+    assert response.status_code == 404
+    assert "error" in response.json()

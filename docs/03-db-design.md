@@ -95,16 +95,20 @@ CREATE TABLE eval_case (
 );
 
 CREATE TABLE eval_run (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    repo_id        INTEGER REFERENCES repo(id),  -- 어느 레포에 대한 실행인지 (조회 API가 필터링에 씀)
-    phase          INTEGER NOT NULL,
-    model          TEXT    NOT NULL,
-    total_cases    INTEGER DEFAULT 0,
-    passed_cases   INTEGER DEFAULT 0,
-    detection_rate REAL    DEFAULT 0,
-    notes          TEXT,
-    started_at     TEXT    NOT NULL DEFAULT (datetime('now')),
-    finished_at    TEXT
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo_id           INTEGER REFERENCES repo(id),  -- 어느 레포에 대한 실행인지 (조회 API가 필터링에 씀)
+    phase             INTEGER NOT NULL,
+    model             TEXT    NOT NULL,
+    total_cases       INTEGER DEFAULT 0,
+    passed_cases      INTEGER DEFAULT 0,
+    detection_rate    REAL    DEFAULT 0,
+    fpr               REAL,                         -- 오탐율
+    citation_accuracy REAL,                         -- 인용 정확도 (인용이 하나도 없으면 NULL)
+    avg_cost_usd      REAL,
+    avg_latency_ms    REAL,
+    notes             TEXT,                         -- 위 통계 전체를 담은 JSON(감사용 원본, API 응답엔 안 나감)
+    started_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+    finished_at       TEXT
 );
 
 CREATE TABLE eval_result (
