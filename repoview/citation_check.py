@@ -1,3 +1,4 @@
+import posixpath
 import re
 import sqlite3
 
@@ -34,7 +35,7 @@ def _check_one(
     read_ranges: list[tuple[str, int, int]],
     citation: dict,
 ) -> str | None:
-    normalized_path = citation["file_path"].replace("\\", "/")
+    normalized_path = posixpath.normpath(citation["file_path"].replace("\\", "/"))
     row = conn.execute(
         "SELECT line_count FROM repo_file WHERE repo_id = ? AND path = ?",
         (repo_id, normalized_path),
@@ -55,7 +56,7 @@ def _was_read(
     read_ranges: list[tuple[str, int, int]], normalized_path: str, start_line: int, end_line: int
 ) -> bool:
     for path, read_start, read_end in read_ranges:
-        if path.replace("\\", "/") != normalized_path:
+        if posixpath.normpath(path.replace("\\", "/")) != normalized_path:
             continue
         if read_start <= end_line and read_end >= start_line:
             return True

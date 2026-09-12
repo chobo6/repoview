@@ -72,6 +72,26 @@ def test_citation_beyond_file_length_is_flagged(conn, mini_repo):
     assert warnings[0]["issue"] == "파일 길이를 벗어난 라인"
 
 
+def test_citation_with_dot_slash_and_double_slash_is_recognized_as_read(conn, mini_repo):
+    # 모델이 read_file은 정규 경로로 호출했지만, 인용에는 "./경로"나 중복 "//"를 쓴 경우
+    # posixpath.normpath로 정규화되어 "read_file로 확인하지 않은 인용"으로 오탐되면 안 된다.
+    repo_id = index_repo(conn, "MiniRepo", mini_repo)["repo_id"]
+    row = conn.execute(
+        "SELECT path, line_count FROM repo_file WHERE repo_id = ? LIMIT 1", (repo_id,)
+    ).fetchone()
+    _seed_session_with_read(conn, session_id=3, repo_id=repo_id, path=row["path"], start=1, end=row["line_count"])
+
+    dot_slash_path = f"./{row['path']}"
+    double_slash_path = row["path"].replace("/", "//", 1)
+
+    review = (
+        f"문제: 없음\n근거: `{dot_slash_path}:1-{row['line_count']}`, "
+        f"`{double_slash_path}:1-{row['line_count']}`\n영향: 없음\n제안: 없음"
+    )
+    warnings = verify_citations(conn, repo_id, session_id=3, review_text=review)
+    assert warnings == []
+
+
 def test_review_with_no_citations_returns_empty_list(conn, mini_repo):
     repo_id = index_repo(conn, "MiniRepo", mini_repo)["repo_id"]
     warnings = verify_citations(conn, repo_id, session_id=999, review_text="문제를 발견하지 못했습니다")

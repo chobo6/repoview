@@ -95,6 +95,9 @@ def run_session(
                     {"role": "tool", "tool_call_id": call.id, "content": result}
                 )
 
+            # 이 검사는 라운드가 끝난 뒤에만 수행되고 그 뒤에 요약 호출이 한 번 더 붙으므로,
+            # 하드 상한이 아니라 트리거 임계값이다 — 실제 토큰 사용량은 한 라운드 + 요약 호출 1회만큼
+            # token_limit을 넘어설 수 있다 (의도된 설계).
             if totals["input"] + totals["output"] > token_limit:
                 break
 
@@ -206,7 +209,12 @@ def _finish(
 ) -> SessionResult:
     citation_warnings = None
     if final_review:
-        warnings = verify_citations(conn, repo_id, session_id, final_review)
+        # 인용 검증은 어드바이저리 기능이다 — 여기서 예외가 나도 이미 완료된 세션을
+        # FAILED로 덮어써서는 안 되므로, 실패하면 경고 없음으로 조용히 낮춘다.
+        try:
+            warnings = verify_citations(conn, repo_id, session_id, final_review)
+        except Exception:
+            warnings = None
         if warnings:
             citation_warnings = json.dumps(warnings, ensure_ascii=False)
 
