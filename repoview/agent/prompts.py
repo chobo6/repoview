@@ -18,9 +18,15 @@ def build_repo_overview(conn: sqlite3.Connection, repo_id: int) -> str:
     ]
 
     directory_counts: Counter[str] = Counter()
+    root_files: list[str] = []
     for path in paths:
         parts = path.split("/")
-        directory = "/".join(parts[:TREE_DEPTH]) if len(parts) > TREE_DEPTH else "/".join(parts[:-1]) or "."
+        if len(parts) == 1:
+            # 레포 루트 파일(Dockerfile, package.json 등)은 디렉토리로 묶으면
+            # "." 밑에 개수만 집계되고 파일명 자체가 안 보인다 — 따로 나열한다.
+            root_files.append(parts[0])
+            continue
+        directory = "/".join(parts[:TREE_DEPTH]) if len(parts) > TREE_DEPTH else "/".join(parts[:-1])
         directory_counts[directory] += 1
 
     tree_lines = [
@@ -30,6 +36,9 @@ def build_repo_overview(conn: sqlite3.Connection, repo_id: int) -> str:
 
     if len(directory_counts) > MAX_TREE_ENTRIES:
         tree_lines.append(f"  ... (외 {len(directory_counts) - MAX_TREE_ENTRIES}개 디렉토리 더 있음)")
+
+    if root_files:
+        tree_lines.append("  (루트 파일) " + ", ".join(sorted(root_files)))
 
     language_counts = Counter(
         row["language"]

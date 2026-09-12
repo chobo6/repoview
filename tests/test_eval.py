@@ -171,6 +171,29 @@ def test_run_eval_isolates_case_failure_and_still_finishes_run(conn, repo_id, se
     assert run_row["finished_at"] is not None
 
 
+def test_run_eval_citation_accuracy_is_none_when_no_citations_extracted(conn, repo_id, seeded_cases):
+    positive = [c for c in seeded_cases if c["category"] != "negative"]
+    llm = FakeLLM([make_text_response("문제를 발견하지 못했습니다 (인용 없음)")])
+    judge_llm = FakeLLM([make_text_response("NO\n근거 없음")])
+
+    stats = run_eval(conn, repo_id, positive, llm, judge_llm, model="gpt-4o", phase=2)
+
+    assert stats["citation_accuracy"] is None
+
+
+def test_run_eval_avg_cost_excludes_failed_cases_from_denominator(conn, repo_id, seeded_cases):
+    # seeded_cases는 [포지티브, 네거티브] 순서다. llm 응답을 1개만 준비해 첫 케이스만
+    # 성공시키고, 두번째 케이스는 run_session에서 응답 고갈로 실패하게 만든다.
+    llm = FakeLLM([make_text_response("문제 없음")])
+    judge_llm = FakeLLM([make_text_response("NO\n근거 없음")])
+
+    stats = run_eval(conn, repo_id, seeded_cases, llm, judge_llm, model="gpt-4o", phase=2)
+
+    # 성공한 케이스 1개(input_tokens=100, output_tokens=50, gpt-4o 가격표 기준)만의
+    # 평균이어야 한다 — 실패 케이스까지 분모에 들어가 절반으로 희석되면 안 된다.
+    assert stats["avg_cost_usd"] == pytest.approx(0.00075)
+
+
 def test_run_eval_raises_on_empty_case_list(conn, repo_id):
     with pytest.raises(ValueError):
         run_eval(conn, repo_id, [], FakeLLM([]), FakeLLM([]), model="gpt-4o", phase=2)

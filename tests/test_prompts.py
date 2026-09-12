@@ -77,3 +77,23 @@ def test_system_prompt_includes_search_strategy_guidance():
     prompt = build_system_prompt("개요")
     assert "search_code" in prompt
     assert "search_semantic" in prompt
+
+
+def test_overview_lists_root_level_file_names(conn):
+    cursor = conn.execute(
+        "INSERT INTO repo (name, root_path, primary_language, framework, file_count) VALUES (?, ?, ?, ?, ?)",
+        ("RootFiles", "/tmp", "typescript", None, 2),
+    )
+    repo_id = cursor.lastrowid
+
+    for path in ("package.json", "src/index.ts"):
+        conn.execute(
+            "INSERT INTO repo_file (repo_id, path, language, line_count) VALUES (?, ?, ?, ?)",
+            (repo_id, path, "json", 10),
+        )
+    conn.commit()
+
+    overview = build_repo_overview(conn, repo_id)
+    # 루트 파일은 "."으로 뭉뚱그려지지 않고 이름 그대로 보여야 한다.
+    assert "package.json" in overview
+    assert "  ./" not in overview

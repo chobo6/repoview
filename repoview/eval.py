@@ -1,6 +1,7 @@
 import argparse
 import json
 import sqlite3
+import sys
 import time
 
 from repoview.agent.llm import LLM, OpenAILLM
@@ -23,6 +24,10 @@ def list_eval_cases(conn: sqlite3.Connection, repo_id: int) -> list[sqlite3.Row]
 def estimate_cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
     pricing = MODEL_PRICING.get(model)
     if pricing is None:
+        print(
+            f"[경고] {model}의 가격 정보가 MODEL_PRICING에 없어 비용을 0으로 집계합니다.",
+            file=sys.stderr,
+        )
         return 0.0
     input_price, output_price = pricing
     return (input_tokens / 1_000_000) * input_price + (output_tokens / 1_000_000) * output_price
@@ -52,6 +57,7 @@ def run_eval(
     false_positives = 0
     total_cost = 0.0
     total_latency_ms = 0
+    completed_cases = 0
 
     for case in cases:
         is_negative = case["category"] == NEGATIVE_CATEGORY
@@ -96,6 +102,7 @@ def run_eval(
 
             total_cost += estimate_cost_usd(model, result.input_tokens, result.output_tokens)
             total_latency_ms += latency_ms
+            completed_cases += 1
         except Exception as exc:
             reason = f"ERROR: {type(exc).__name__}: {exc}"
 
@@ -115,9 +122,9 @@ def run_eval(
         "passed_cases": positive_passed,
         "detection_rate": (positive_passed / positive_total) if positive_total else 0.0,
         "fpr": (false_positives / negative_total) if negative_total else 0.0,
-        "citation_accuracy": (citation_hits / citation_total) if citation_total else 1.0,
-        "avg_cost_usd": (total_cost / len(cases)) if cases else 0.0,
-        "avg_latency_ms": (total_latency_ms / len(cases)) if cases else 0.0,
+        "citation_accuracy": (citation_hits / citation_total) if citation_total else None,
+        "avg_cost_usd": (total_cost / completed_cases) if completed_cases else 0.0,
+        "avg_latency_ms": (total_latency_ms / completed_cases) if completed_cases else 0.0,
     }
     _finish_eval_run(conn, eval_run_id, stats)
     return stats
@@ -218,9 +225,12 @@ def main() -> None:
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 
+    citation_accuracy = (
+        f"{stats['citation_accuracy']:.0%}" if stats["citation_accuracy"] is not None else "N/A(인용 없음)"
+    )
     print(
         f"[Phase {args.phase}] {args.repo}: 탐지율 {stats['detection_rate']:.0%}, "
-        f"오탐율 {stats['fpr']:.0%}, 인용 정확도 {stats['citation_accuracy']:.0%}, "
+        f"오탐율 {stats['fpr']:.0%}, 인용 정확도 {citation_accuracy}, "
         f"평균 비용 ${stats['avg_cost_usd']:.4f}, 평균 지연 {stats['avg_latency_ms']:.0f}ms"
     )
 
