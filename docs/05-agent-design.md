@@ -75,6 +75,16 @@ return partial_result(status="CAPPED")     # 상한 도달
 
 어긋나는 인용이 있으면 `session.citation_warnings`(JSON, 문제 없으면 NULL)에 기록한다.
 
+## 8. SSE 스트리밍 지원 (세션 생성/실행 분리)
+
+`run_session`은 이미 스텝마다 `trace_step`에 즉시 commit하므로, 이 커밋 자체를 SSE 이벤트 소스로 재사용한다(`docs/04-api-spec.md` §2 "구현 노트" 참고) — 루프 구조 자체는 바꾸지 않는다.
+
+**`run_session`의 유일한 변경**: `session_id: int | None = None` 파라미터 추가. 주어지면 `_create_session` 호출(새 행 INSERT)을 건너뛰고 그 ID를 그대로 사용한다. `session_id`가 없을 때의 기존 동작(테스트, `eval.py`)은 그대로다 — 이 둘은 세션 생성과 실행이 분리될 필요가 없어 계속 한 번에 처리한다.
+
+**세션 생성과 실행의 분리는 API 레이어 책임**이다: `POST /api/sessions`가 `status='PENDING'`으로 행만 만들고, `GET /sessions/{id}/stream`이 연결 시 `UPDATE ... WHERE status='PENDING'`으로 원자적으로 실행을 선점한 뒤 `run_session(..., session_id=기존_id)`를 백그라운드 스레드(`asyncio.to_thread`)로 돌린다. `run_session` 자신은 자신이 생성됐는지 이어받았는지 알 필요가 없다.
+
+**폴링/실행 커넥션 분리**: 두 실행 경로(SSE 폴링, 백그라운드 실행)가 각각 자기 sqlite 커넥션을 열어 동시에 같은 DB 파일에 접근한다 — `get_connection()`에 `PRAGMA busy_timeout = 5000`(5초)을 추가해 흔치 않은 "database is locked"에도 짧게 재시도하도록 했다.
+
 **판단 이유 (2026-09-12)**: 원래 계획은 "UI에 경고 배지를 달거나 재생성을 요청"이었지만, 이번 라운드는 검증 결과를 **기록하는 것까지만** 한다 — 리뷰를 자동으로 재생성하면 LLM 호출이 추가로 나가 비용이 늘고, 프론트엔드에 배지를 그리는 화면 작업은 별도 스코프로 미뤘다(백엔드 데이터가 준비된 뒤 한 번에 처리하기로 함). eval 관점에서는 "이 세션에 검증 실패 인용이 있었는지" 데이터만 있으면 당장 충분하다. 프로그램적으로 검증 가능한 부분은 LLM을 믿지 않고 코드로 검증한다는 원칙은 유지한다.
 
 ## 5. 컨텍스트 관리
