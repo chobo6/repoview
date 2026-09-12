@@ -316,3 +316,29 @@ def test_verify_citations_exception_does_not_fail_completed_session(conn, repo_i
     assert row["status"] == "COMPLETED"
     assert row["final_review"] == "문제 없음: 리뷰 완료"
     assert row["citation_warnings"] is None
+
+
+def test_citation_warnings_write_failure_does_not_affect_session_status(conn, repo_id, monkeypatch):
+    # citation_warnings 기록 자체가 실패해도(예: 마이그레이션 누락 시나리오) 이미 커밋된
+    # status/final_review는 영향받지 않아야 한다 — 두 UPDATE가 분리되어 있는지 검증한다.
+    from repoview.agent import loop as loop_module
+
+    def _raise(*args, **kwargs):
+        raise RuntimeError("citation_warnings 컬럼 기록 실패")
+
+    monkeypatch.setattr(loop_module, "_record_citation_warnings", _raise)
+
+    llm = FakeLLM([
+        make_text_response("문제: 있음\n근거: `no/such/file.py:1`\n영향: -\n제안: -")
+    ])
+    result = run_session(conn, repo_id, "질문", llm)
+
+    assert result.status == "COMPLETED"
+
+    row = conn.execute(
+        "SELECT status, final_review, citation_warnings FROM session WHERE id = ?",
+        (result.session_id,),
+    ).fetchone()
+    assert row["status"] == "COMPLETED"
+    assert row["final_review"] is not None
+    assert row["citation_warnings"] is None

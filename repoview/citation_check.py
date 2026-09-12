@@ -43,7 +43,9 @@ def _check_one(
     if row is None:
         return "존재하지 않는 파일"
 
-    if row["line_count"] is not None and citation["start_line"] > row["line_count"]:
+    if row["line_count"] is not None and (
+        citation["start_line"] > row["line_count"] or citation["end_line"] > row["line_count"]
+    ):
         return "파일 길이를 벗어난 라인"
 
     if not _was_read(read_ranges, normalized_path, citation["start_line"], citation["end_line"]):

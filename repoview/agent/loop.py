@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -207,31 +208,31 @@ def _finish(
     totals: dict,
     error: str | None = None,
 ) -> SessionResult:
-    citation_warnings = None
-    if final_review:
-        # 인용 검증은 어드바이저리 기능이다 — 여기서 예외가 나도 이미 완료된 세션을
-        # FAILED로 덮어써서는 안 되므로, 실패하면 경고 없음으로 조용히 낮춘다.
-        try:
-            warnings = verify_citations(conn, repo_id, session_id, final_review)
-        except Exception:
-            warnings = None
-        if warnings:
-            citation_warnings = json.dumps(warnings, ensure_ascii=False)
-
+    # 세션 상태 기록은 인용 검증과 완전히 분리한다 — 인용 검증(어드바이저리 기능)이
+    # 실패하거나 citation_warnings 기록 자체가 실패해도(예: 마이그레이션 누락) 이미
+    # 완료된 세션의 status/final_review는 항상 남아야 한다.
     conn.execute(
         """
         UPDATE session
         SET status = ?, final_review = ?, iteration_count = ?,
-            input_tokens = ?, output_tokens = ?, error = ?,
-            citation_warnings = ?, finished_at = datetime('now')
+            input_tokens = ?, output_tokens = ?, error = ?, finished_at = datetime('now')
         WHERE id = ?
         """,
-        (
-            status, final_review, iteration, totals["input"], totals["output"], error,
-            citation_warnings, session_id,
-        ),
+        (status, final_review, iteration, totals["input"], totals["output"], error, session_id),
     )
     conn.commit()
+
+    if final_review:
+        try:
+            warnings = verify_citations(conn, repo_id, session_id, final_review)
+            if warnings:
+                _record_citation_warnings(conn, session_id, warnings)
+        except Exception as exc:
+            print(
+                f"[경고] 인용 사후검증 실패 (session_id={session_id}): {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
+
     return SessionResult(
         session_id=session_id,
         status=status,
@@ -240,3 +241,11 @@ def _finish(
         input_tokens=totals["input"],
         output_tokens=totals["output"],
     )
+
+
+def _record_citation_warnings(conn, session_id: int, warnings: list[dict]) -> None:
+    conn.execute(
+        "UPDATE session SET citation_warnings = ? WHERE id = ?",
+        (json.dumps(warnings, ensure_ascii=False), session_id),
+    )
+    conn.commit()
