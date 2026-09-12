@@ -28,3 +28,15 @@ export async function fetchSession(sessionId) {
   if (!response.ok) throw new Error('세션을 불러오지 못했습니다')
   return response.json()
 }
+
+export async function fetchEvalRuns(repoId) {
+  const response = await fetch(`${BASE_URL}/evals/runs?repo_id=${repoId}`)
+  if (!response.ok) throw new Error('eval 결과를 불러오지 못했습니다')
+  return response.json()
+}
+
+export async function fetchEvalRun(runId) {
+  const response = await fetch(`${BASE_URL}/evals/runs/${runId}`)
+  if (!response.ok) throw new Error('eval 상세 결과를 불러오지 못했습니다')
+  return response.json()
+}
