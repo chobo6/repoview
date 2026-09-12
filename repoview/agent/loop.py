@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,7 +9,8 @@ import chromadb
 from chromadb.errors import NotFoundError
 
 from repoview.agent.prompts import build_repo_overview, build_system_prompt
-from repoview.config import CHROMA_PATH, CURRENT_PHASE, MAX_ITERATIONS
+from repoview.citation_check import verify_citations
+from repoview.config import CHROMA_PATH, CURRENT_PHASE, MAX_ITERATIONS, MAX_SESSION_TOKENS
 from repoview.embedder import collection_name
 from repoview.tools import TOOL_SCHEMAS, dispatch
 
@@ -34,9 +36,11 @@ def run_session(
     model: str = "",
     phase: int = CURRENT_PHASE,
     max_iterations: int | None = None,
+    max_session_tokens: int | None = None,
     embedding_client=None,
 ) -> SessionResult:
     limit = max_iterations if max_iterations is not None else MAX_ITERATIONS
+    token_limit = max_session_tokens if max_session_tokens is not None else MAX_SESSION_TOKENS
     repo = conn.execute("SELECT * FROM repo WHERE id = ?", (repo_id,)).fetchone()
     if repo is None:
         raise ValueError(f"레포를 찾을 수 없습니다: {repo_id}")
@@ -57,6 +61,8 @@ def run_session(
             {"role": "user", "content": question},
         ]
 
+        call_counts: dict[tuple[str, str], int] = {}
+
         for iteration in range(1, limit + 1):
             response = _call_llm(llm, messages, TOOL_SCHEMAS, totals)
             step_no += 1
@@ -65,7 +71,7 @@ def run_session(
 
             if not response.tool_calls:
                 return _finish(
-                    conn, session_id, "COMPLETED", response.text, iteration, totals
+                    conn, repo_id, session_id, "COMPLETED", response.text, iteration, totals
                 )
 
             for call in response.tool_calls:
@@ -80,10 +86,22 @@ def run_session(
                 )
                 latency_ms = int((time.monotonic() - started) * 1000)
 
-                _record_tool_step(conn, session_id, step_no, call, result, latency_ms)
+                args_json = json.dumps(call.arguments, sort_keys=True, ensure_ascii=False)
+                call_key = (call.name, args_json)
+                call_counts[call_key] = call_counts.get(call_key, 0) + 1
+                if call_counts[call_key] >= 3:
+                    result += "\n\n이미 동일한 검색을 수행했습니다. 다른 접근을 시도하거나 결론을 내리세요."
+
+                _record_tool_step(conn, session_id, step_no, call, args_json, result, latency_ms)
                 messages.append(
                     {"role": "tool", "tool_call_id": call.id, "content": result}
                 )
+
+            # 이 검사는 라운드가 끝난 뒤에만 수행되고 그 뒤에 요약 호출이 한 번 더 붙으므로,
+            # 하드 상한이 아니라 트리거 임계값이다 — 실제 토큰 사용량은 한 라운드 + 요약 호출 1회만큼
+            # token_limit을 넘어설 수 있다 (의도된 설계).
+            if totals["input"] + totals["output"] > token_limit:
+                break
 
         # 반복 상한 도달: 도구 없이 한 번 더 호출해 지금까지 찾은 내용을 정리시킨다.
         messages.append(
@@ -97,10 +115,10 @@ def run_session(
         step_no += 1
         _record_llm_step(conn, session_id, step_no, summary)
 
-        return _finish(conn, session_id, "CAPPED", summary.text, iteration, totals)
+        return _finish(conn, repo_id, session_id, "CAPPED", summary.text, iteration, totals)
     except Exception as exc:
         _finish(
-            conn, session_id, "FAILED", None, iteration, totals,
+            conn, repo_id, session_id, "FAILED", None, iteration, totals,
             error=f"{type(exc).__name__}: {exc}",
         )
         raise
@@ -158,7 +176,7 @@ def _record_llm_step(conn, session_id: int, step_no: int, response) -> None:
 
 
 def _record_tool_step(
-    conn, session_id: int, step_no: int, call, result: str, latency_ms: int
+    conn, session_id: int, step_no: int, call, args_json: str, result: str, latency_ms: int
 ) -> None:
     conn.execute(
         """
@@ -171,7 +189,7 @@ def _record_tool_step(
             session_id,
             step_no,
             call.name,
-            json.dumps(call.arguments, ensure_ascii=False),
+            args_json,
             result[:MAX_TRACE_RESULT_CHARS],
             len(result),
             latency_ms,
@@ -183,6 +201,7 @@ def _record_tool_step(
 
 def _finish(
     conn,
+    repo_id: int,
     session_id: int,
     status: str,
     final_review: str | None,
@@ -190,6 +209,9 @@ def _finish(
     totals: dict,
     error: str | None = None,
 ) -> SessionResult:
+    # 세션 상태 기록은 인용 검증과 완전히 분리한다 — 인용 검증(어드바이저리 기능)이
+    # 실패하거나 citation_warnings 기록 자체가 실패해도(예: 마이그레이션 누락) 이미
+    # 완료된 세션의 status/final_review는 항상 남아야 한다.
     conn.execute(
         """
         UPDATE session
@@ -200,6 +222,18 @@ def _finish(
         (status, final_review, iteration, totals["input"], totals["output"], error, session_id),
     )
     conn.commit()
+
+    if final_review:
+        try:
+            warnings = verify_citations(conn, repo_id, session_id, final_review)
+            if warnings:
+                _record_citation_warnings(conn, session_id, warnings)
+        except Exception as exc:
+            print(
+                f"[경고] 인용 사후검증 실패 (session_id={session_id}): {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
+
     return SessionResult(
         session_id=session_id,
         status=status,
@@ -208,3 +242,11 @@ def _finish(
         input_tokens=totals["input"],
         output_tokens=totals["output"],
     )
+
+
+def _record_citation_warnings(conn, session_id: int, warnings: list[dict]) -> None:
+    conn.execute(
+        "UPDATE session SET citation_warnings = ? WHERE id = ?",
+        (json.dumps(warnings, ensure_ascii=False), session_id),
+    )
+    conn.commit()

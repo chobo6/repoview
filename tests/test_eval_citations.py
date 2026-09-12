@@ -1,4 +1,4 @@
-from repoview.eval_citations import extract_citations, matches_file
+from repoview.eval_citations import extract_citations, matches_file, normalize_path, ranges_overlap
 
 
 def test_extract_citations_finds_single_line_citation():
@@ -42,3 +42,27 @@ def test_matches_file_returns_false_when_absent():
     citations = [{"file_path": "a.py", "start_line": 1, "end_line": 1}]
 
     assert matches_file(citations, "b.py") is False
+
+
+def test_matches_file_normalizes_dot_slash_and_double_slash():
+    # eval.py의 citation_accuracy와 citation_check.py의 인용 사후검증이 같은 입력에
+    # 대해 다른 판정을 내리지 않도록, normalize_path를 공유해 "./" 및 중복 "//"도
+    # 정규 경로와 같은 것으로 인식해야 한다.
+    citations = [{"file_path": "./src/main/App.java", "start_line": 1, "end_line": 1}]
+
+    assert matches_file(citations, "src//main/App.java") is True
+
+
+def test_normalize_path_collapses_dot_slash_and_double_slash():
+    assert normalize_path("./src/main/App.java") == "src/main/App.java"
+    assert normalize_path("src//main/App.java") == "src/main/App.java"
+    assert normalize_path("src\\main\\App.java") == "src/main/App.java"
+
+
+def test_ranges_overlap_true_when_ranges_intersect():
+    assert ranges_overlap(1, 10, 5, 15) is True
+    assert ranges_overlap(1, 10, 10, 15) is True
+
+
+def test_ranges_overlap_false_when_ranges_disjoint():
+    assert ranges_overlap(1, 10, 11, 15) is False

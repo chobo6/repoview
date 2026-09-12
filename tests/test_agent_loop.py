@@ -185,3 +185,160 @@ def test_run_session_without_embedding_client_still_works(conn, repo_id):
     llm = FakeLLM([make_text_response("완료")])
     result = run_session(conn, repo_id, "질문", llm)
     assert result.status == "COMPLETED"
+
+
+def test_caps_when_cumulative_tokens_exceed_limit(conn, repo_id):
+    # make_tool_call_response는 input_tokens=100, output_tokens=20 고정이라
+    # 한 번만 호출해도 120토큰이 누적된다. max_session_tokens=100이면 그 자리에서
+    # (다음 라운드로 못 넘어가고) 바로 상한을 넘겨 반복 루프를 break하고,
+    # 기존 "반복 상한 도달" 요약 경로로 빠져 CAPPED가 되어야 한다.
+    llm = FakeLLM([
+        make_tool_call_response("search_code", {"pattern": "a"}),
+        make_text_response("토큰 상한 도달 후 요약"),
+    ])
+    result = run_session(conn, repo_id, "질문", llm, max_iterations=10, max_session_tokens=100)
+    assert result.status == "CAPPED"
+    assert result.final_review == "토큰 상한 도달 후 요약"
+    assert result.iteration_count == 1
+
+
+def test_does_not_cap_when_under_token_limit(conn, repo_id):
+    # 첫 라운드(120토큰 누적)가 상한(10,000)에 한참 못 미쳐 break하지 않고
+    # 두 번째 라운드로 정상 진행되어 COMPLETED로 끝나야 한다.
+    llm = FakeLLM([
+        make_tool_call_response("search_code", {"pattern": "a"}),
+        make_text_response("문제 없음"),
+    ])
+    result = run_session(conn, repo_id, "질문", llm, max_session_tokens=10_000)
+    assert result.status == "COMPLETED"
+    assert result.final_review == "문제 없음"
+
+
+def test_injects_notice_after_third_identical_tool_call(conn, repo_id):
+    llm = FakeLLM([
+        make_tool_call_response("search_code", {"pattern": "x"}),
+        make_tool_call_response("search_code", {"pattern": "x"}),
+        make_tool_call_response("search_code", {"pattern": "x"}),
+        make_text_response("끝"),
+    ])
+    result = run_session(conn, repo_id, "질문", llm, max_iterations=10)
+    assert result.status == "COMPLETED"
+
+    tool_results = [
+        row["tool_result"]
+        for row in conn.execute(
+            "SELECT tool_result FROM trace_step WHERE session_id = ? AND type = 'TOOL_CALL' ORDER BY step_no",
+            (result.session_id,),
+        ).fetchall()
+    ]
+    assert len(tool_results) == 3
+    assert "이미 동일한 검색을 수행했습니다" not in tool_results[0]
+    assert "이미 동일한 검색을 수행했습니다" not in tool_results[1]
+    assert "이미 동일한 검색을 수행했습니다" in tool_results[2]
+
+
+def test_does_not_inject_notice_for_different_arguments(conn, repo_id):
+    llm = FakeLLM([
+        make_tool_call_response("search_code", {"pattern": "x"}),
+        make_tool_call_response("search_code", {"pattern": "y"}),
+        make_tool_call_response("search_code", {"pattern": "z"}),
+        make_text_response("끝"),
+    ])
+    result = run_session(conn, repo_id, "질문", llm, max_iterations=10)
+    tool_results = [
+        row["tool_result"]
+        for row in conn.execute(
+            "SELECT tool_result FROM trace_step WHERE session_id = ? AND type = 'TOOL_CALL' ORDER BY step_no",
+            (result.session_id,),
+        ).fetchall()
+    ]
+    assert all("이미 동일한 검색을 수행했습니다" not in r for r in tool_results)
+
+
+def test_citation_warnings_recorded_when_review_cites_nonexistent_file(conn, repo_id):
+    llm = FakeLLM([
+        make_text_response("문제: 있음\n근거: `no/such/file.py:1`\n영향: -\n제안: -")
+    ])
+    result = run_session(conn, repo_id, "질문", llm)
+    row = conn.execute(
+        "SELECT citation_warnings FROM session WHERE id = ?", (result.session_id,)
+    ).fetchone()
+    assert row["citation_warnings"] is not None
+    assert "no/such/file.py" in row["citation_warnings"]
+    assert "존재하지 않는 파일" in row["citation_warnings"]
+
+
+def test_citation_warnings_recorded_when_review_cites_existing_but_unread_file(conn, repo_id):
+    # mini_repo에 실제로 존재하는 파일을 read_file 없이 그냥 인용하는 경우 —
+    # "read_file로 확인하지 않은 인용" 분기가 run_session을 통해서도 실제로 발동해야 한다.
+    llm = FakeLLM([
+        make_text_response(
+            "문제: 있음\n근거: `src/main/java/com/example/UserService.java:1`\n영향: -\n제안: -"
+        )
+    ])
+    result = run_session(conn, repo_id, "질문", llm)
+    row = conn.execute(
+        "SELECT citation_warnings FROM session WHERE id = ?", (result.session_id,)
+    ).fetchone()
+    assert row["citation_warnings"] is not None
+    assert "read_file로 확인하지 않은 인용" in row["citation_warnings"]
+
+
+def test_citation_warnings_is_none_when_no_issues(conn, repo_id):
+    llm = FakeLLM([make_text_response("문제를 발견하지 못했습니다")])
+    result = run_session(conn, repo_id, "질문", llm)
+    row = conn.execute(
+        "SELECT citation_warnings FROM session WHERE id = ?", (result.session_id,)
+    ).fetchone()
+    assert row["citation_warnings"] is None
+
+
+def test_verify_citations_exception_does_not_fail_completed_session(conn, repo_id, monkeypatch):
+    # 인용 검증은 어드바이저리 기능이다 — verify_citations가 예외를 던져도
+    # 이미 완료된 세션이 FAILED/final_review=None으로 덮어써지면 안 된다.
+    from repoview.agent import loop as loop_module
+
+    def _raise(*args, **kwargs):
+        raise RuntimeError("citation 검사기 고장")
+
+    monkeypatch.setattr(loop_module, "verify_citations", _raise)
+
+    llm = FakeLLM([make_text_response("문제 없음: 리뷰 완료")])
+    result = run_session(conn, repo_id, "질문", llm)
+
+    assert result.status == "COMPLETED"
+    assert result.final_review == "문제 없음: 리뷰 완료"
+
+    row = conn.execute(
+        "SELECT status, final_review, citation_warnings FROM session WHERE id = ?",
+        (result.session_id,),
+    ).fetchone()
+    assert row["status"] == "COMPLETED"
+    assert row["final_review"] == "문제 없음: 리뷰 완료"
+    assert row["citation_warnings"] is None
+
+
+def test_citation_warnings_write_failure_does_not_affect_session_status(conn, repo_id, monkeypatch):
+    # citation_warnings 기록 자체가 실패해도(예: 마이그레이션 누락 시나리오) 이미 커밋된
+    # status/final_review는 영향받지 않아야 한다 — 두 UPDATE가 분리되어 있는지 검증한다.
+    from repoview.agent import loop as loop_module
+
+    def _raise(*args, **kwargs):
+        raise RuntimeError("citation_warnings 컬럼 기록 실패")
+
+    monkeypatch.setattr(loop_module, "_record_citation_warnings", _raise)
+
+    llm = FakeLLM([
+        make_text_response("문제: 있음\n근거: `no/such/file.py:1`\n영향: -\n제안: -")
+    ])
+    result = run_session(conn, repo_id, "질문", llm)
+
+    assert result.status == "COMPLETED"
+
+    row = conn.execute(
+        "SELECT status, final_review, citation_warnings FROM session WHERE id = ?",
+        (result.session_id,),
+    ).fetchone()
+    assert row["status"] == "COMPLETED"
+    assert row["final_review"] is not None
+    assert row["citation_warnings"] is None

@@ -114,8 +114,12 @@ def init_db(conn: sqlite3.Connection) -> None:
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
-    columns = {row["name"] for row in conn.execute("PRAGMA table_info(eval_result)")}
-    if "false_positive" not in columns:
+    eval_result_columns = {row["name"] for row in conn.execute("PRAGMA table_info(eval_result)")}
+    if "false_positive" not in eval_result_columns:
         conn.execute(
             "ALTER TABLE eval_result ADD COLUMN false_positive INTEGER NOT NULL DEFAULT 0"
         )
+
+    session_columns = {row["name"] for row in conn.execute("PRAGMA table_info(session)")}
+    if "citation_warnings" not in session_columns:
+        conn.execute("ALTER TABLE session ADD COLUMN citation_warnings TEXT")
