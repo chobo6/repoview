@@ -212,3 +212,44 @@ def test_does_not_cap_when_under_token_limit(conn, repo_id):
     result = run_session(conn, repo_id, "질문", llm, max_session_tokens=10_000)
     assert result.status == "COMPLETED"
     assert result.final_review == "문제 없음"
+
+
+def test_injects_notice_after_third_identical_tool_call(conn, repo_id):
+    llm = FakeLLM([
+        make_tool_call_response("search_code", {"pattern": "x"}),
+        make_tool_call_response("search_code", {"pattern": "x"}),
+        make_tool_call_response("search_code", {"pattern": "x"}),
+        make_text_response("끝"),
+    ])
+    result = run_session(conn, repo_id, "질문", llm, max_iterations=10)
+    assert result.status == "COMPLETED"
+
+    tool_results = [
+        row["tool_result"]
+        for row in conn.execute(
+            "SELECT tool_result FROM trace_step WHERE session_id = ? AND type = 'TOOL_CALL' ORDER BY step_no",
+            (result.session_id,),
+        ).fetchall()
+    ]
+    assert len(tool_results) == 3
+    assert "이미 동일한 검색을 수행했습니다" not in tool_results[0]
+    assert "이미 동일한 검색을 수행했습니다" not in tool_results[1]
+    assert "이미 동일한 검색을 수행했습니다" in tool_results[2]
+
+
+def test_does_not_inject_notice_for_different_arguments(conn, repo_id):
+    llm = FakeLLM([
+        make_tool_call_response("search_code", {"pattern": "x"}),
+        make_tool_call_response("search_code", {"pattern": "y"}),
+        make_tool_call_response("search_code", {"pattern": "z"}),
+        make_text_response("끝"),
+    ])
+    result = run_session(conn, repo_id, "질문", llm, max_iterations=10)
+    tool_results = [
+        row["tool_result"]
+        for row in conn.execute(
+            "SELECT tool_result FROM trace_step WHERE session_id = ? AND type = 'TOOL_CALL' ORDER BY step_no",
+            (result.session_id,),
+        ).fetchall()
+    ]
+    assert all("이미 동일한 검색을 수행했습니다" not in r for r in tool_results)

@@ -59,6 +59,8 @@ def run_session(
             {"role": "user", "content": question},
         ]
 
+        call_counts: dict[tuple[str, str], int] = {}
+
         for iteration in range(1, limit + 1):
             response = _call_llm(llm, messages, TOOL_SCHEMAS, totals)
             step_no += 1
@@ -81,6 +83,11 @@ def run_session(
                     embedding_client=embedding_client,
                 )
                 latency_ms = int((time.monotonic() - started) * 1000)
+
+                call_key = (call.name, json.dumps(call.arguments, sort_keys=True, ensure_ascii=False))
+                call_counts[call_key] = call_counts.get(call_key, 0) + 1
+                if call_counts[call_key] >= 3:
+                    result += "\n\n이미 동일한 검색을 수행했습니다. 다른 접근을 시도하거나 결론을 내리세요."
 
                 _record_tool_step(conn, session_id, step_no, call, result, latency_ms)
                 messages.append(
