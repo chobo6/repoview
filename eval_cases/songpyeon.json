@@ -52,5 +52,122 @@
     "expected_line_end": 6,
     "category": "negative",
     "is_planted": 0
+  },
+  {
+    "question": "돼지 색 연타 방지(PIG_SPAM_THRESHOLD_MS)가 실제로 작동해?",
+    "expected_finding": "PIG_SPAM_THRESHOLD_MS가 0이라 isSpammedPress의 msSinceLastPress < PIG_SPAM_THRESHOLD_MS(< 0) 조건이 실전에서 절대 참이 될 수 없어, 돼지 4색 매크로 연타 방지 가드가 사실상 죽은 코드다",
+    "expected_file_path": "server/src/game/inputSpamGuard.ts",
+    "expected_line_start": 11,
+    "expected_line_end": 27,
+    "category": "logic_bug",
+    "is_planted": 0
+  },
+  {
+    "question": "관리자 키 입력 테스트 도구(AdminKeyTestTool)가 실제 서버 민트 임계값이랑 맞아?",
+    "expected_finding": "서버의 MINT_SPAM_THRESHOLD_MS는 20ms인데 클라이언트에 복사해둔 상수는 35ms로 어긋나 있어, 관리자가 이 도구로 재는 씹힘 판정이 실제 서버 가드 기준과 다르게 표시된다",
+    "expected_file_path": "client/src/components/AdminKeyTestTool.tsx",
+    "expected_line_start": 11,
+    "expected_line_end": 15,
+    "category": "logic_bug",
+    "is_planted": 0
+  },
+  {
+    "question": "/api/friends 엔드포인트에 N+1 쿼리 있어?",
+    "expected_finding": "listFriends로 목록을 가져온 뒤 각 친구마다 getUnreadCount를 map 안에서 호출하고, getUnreadCount 자체가 매번 2번의 쿼리를 날려 친구가 N명이면 최대 2N+1번의 DB 쿼리가 발생한다",
+    "expected_file_path": "server/src/createServer.ts",
+    "expected_line_start": 757,
+    "expected_line_end": 762,
+    "category": "n_plus_one",
+    "is_planted": 0
+  },
+  {
+    "question": "관리자 로그인 비밀번호 비교 로직에 타이밍 공격 취약점 있어?",
+    "expected_finding": "sha256으로 먼저 고정 길이 해시한 뒤 timingSafeEqual로 비교하는 방식이라 안전하다 — 길이가 다른 버퍼를 직접 비교하면 timingSafeEqual이 던지기 때문에 해시로 정규화한 의도된 올바른 구현이다",
+    "expected_file_path": "server/src/admin/auth.ts",
+    "expected_line_start": 11,
+    "expected_line_end": 24,
+    "category": "negative",
+    "is_planted": 0
+  },
+  {
+    "question": "MatchRoom에서 클라이언트가 chooseRole 메시지로 아무 문자열이나 role로 보내면 어떻게 돼?",
+    "expected_finding": "onMessage(chooseRole) 핸들러의 타입 단언만 있을 뿐 런타임 검증이 없어, gameMode가 고정 모드가 아니면 임의 문자열이 role로 그대로 저장될 수 있고 PlayerState.role도 스키마 레벨 검증이 없다",
+    "expected_file_path": "server/src/rooms/MatchRoom.ts",
+    "expected_line_start": 604,
+    "expected_line_end": 628,
+    "category": "unvalidated_input",
+    "is_planted": 0
+  },
+  {
+    "question": "onAuth에서 쿠키 헤더를 직접 파싱하는데, 잘못 인코딩된 쿠키 값이 오면 서버가 죽어?",
+    "expected_finding": "getCookieValue의 decodeURIComponent가 malformed % 시퀀스에 URIError를 던질 수 있지만, 유일한 호출부인 MatchRoom.onAuth가 이미 예외를 던져 입장을 거부하는 패턴이라 Colyseus가 이를 연결 거부로 캐치해 서버 크래시로 이어지지 않는다",
+    "expected_file_path": "server/src/auth/session.ts",
+    "expected_line_start": 23,
+    "expected_line_end": 33,
+    "category": "negative",
+    "is_planted": 0
+  },
+  {
+    "question": "문의하기(/api/inquiries) API에 스팸/도배 방지 있어?",
+    "expected_finding": "title/content가 빈 문자열인지만 체크할 뿐 길이 제한과 rate limiting이 전혀 없어, 로그인만 하면 반복 요청으로 inquiries 테이블과 관리자 대시보드를 도배할 수 있다",
+    "expected_file_path": "server/src/createServer.ts",
+    "expected_line_start": 606,
+    "expected_line_end": 621,
+    "category": "missing_rate_limiting",
+    "is_planted": 0
+  },
+  {
+    "question": "admin/actionLog.ts에 특정 닉네임이 하드코딩돼 있던데 이거 백도어 아니야?",
+    "expected_finding": "TRACKED_NICKNAME 하드코딩은 매크로 조사 대상을 추적하기 위한 의도된 관리자 기능이다 — 클라이언트 번들에는 문자열이 내려가지 않고, 저장된 로그도 requireAdmin으로 보호된 라우트로만 조회 가능하다",
+    "expected_file_path": "server/src/admin/actionLog.ts",
+    "expected_line_start": 11,
+    "expected_line_end": 27,
+    "category": "negative",
+    "is_planted": 0
+  },
+  {
+    "question": "닉네임 색 리롤(reroll-color)에서 Math.random 쓰는 거 보안 문제 있어?",
+    "expected_finding": "#RRGGBB 랜덤 색상을 뽑는 데 Math.random을 쓰지만 순수 코스메틱 값이라 예측 가능해도 악용할 방법이 없어, CSPRNG가 필요 없는 자리다",
+    "expected_file_path": "server/src/auth/googleAuth.ts",
+    "expected_line_start": 357,
+    "expected_line_end": 360,
+    "category": "negative",
+    "is_planted": 0
+  },
+  {
+    "question": "/api/profile/:nickname에서 다른 유저 정보 조회할 때 민감정보 새는 거 있어?",
+    "expected_finding": "응답에 닉네임/색상/효과/최고라운드/플레이 횟수/친구상태만 포함되고 email, gameMoney, bannedAt 등 민감 필드는 명시적으로 제외돼 있다 — 로그인만 하면 조회 가능한 건 의도된 공개 프로필 기능",
+    "expected_file_path": "server/src/createServer.ts",
+    "expected_line_start": 928,
+    "expected_line_end": 959,
+    "category": "negative",
+    "is_planted": 0
+  },
+  {
+    "question": "관리자 세션 저장소(sessions Map)가 무한정 쌓이는 메모리 누수 아니야?",
+    "expected_finding": "createSession으로 추가된 토큰은 isValidSession이 그 토큰으로 다시 조회될 때만 만료 체크 후 삭제되고 능동적인 백그라운드 정리가 없어, 다시 조회되지 않는 만료 토큰은 프로세스가 재시작될 때까지 Map에 영원히 남는다",
+    "expected_file_path": "server/src/admin/auth.ts",
+    "expected_line_start": 9,
+    "expected_line_end": 41,
+    "category": "memory_leak",
+    "is_planted": 0
+  },
+  {
+    "question": "턴 타이머/카운트다운 토큰(turnToken/countdownToken) 패턴에 race condition 있어?",
+    "expected_finding": "startTurn/scheduleCountdownTick마다 토큰을 증가시키고 setTimeout 콜백에서 캡처된 토큰과 현재 토큰을 비교해 스테일 타이머를 무시하는 패턴이 일관되게 적용돼 있고, Node.js가 단일 스레드라 경쟁 조건이 없다",
+    "expected_file_path": "server/src/rooms/MatchRoom.ts",
+    "expected_line_start": 728,
+    "expected_line_end": 748,
+    "category": "negative",
+    "is_planted": 0
+  },
+  {
+    "question": "/api/chat/:friendUserId/read가 친구 관계 확인 없이 markRead를 호출하는데 이거 문제 있어?",
+    "expected_finding": "같은 파일의 /api/chat/send, /api/chat/:friendUserId/messages는 모두 areFriends 체크를 거치는데 /read 엔드포인트만 그 체크가 빠져 있어, 형제 엔드포인트들과 일관성이 깨진 인가 체크 누락이다",
+    "expected_file_path": "server/src/createServer.ts",
+    "expected_line_start": 912,
+    "expected_line_end": 926,
+    "category": "unvalidated_input",
+    "is_planted": 0
   }
 ]

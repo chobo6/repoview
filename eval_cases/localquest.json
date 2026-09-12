@@ -52,5 +52,104 @@
     "expected_line_end": 22,
     "category": "negative",
     "is_planted": 0
+  },
+  {
+    "question": "/api/rewards/exchange, /api/rewards/use API에 인증/인가 문제 있어?",
+    "expected_finding": "요청 본문의 userId를 세션이나 JWT 검증 없이 그대로 신뢰해서 포인트 차감과 쿠폰 사용을 처리한다 — 다른 사용자의 userId를 넣으면 그 사용자 명의로 리워드를 교환하거나 쿠폰을 사용 처리할 수 있는 IDOR/인증 우회 취약점이다",
+    "expected_file_path": "Backend/src/main/java/com/app/controller/api/RewardItemAPIController.java",
+    "expected_line_start": 77,
+    "expected_line_end": 99,
+    "category": "auth_bypass",
+    "is_planted": 0
+  },
+  {
+    "question": "JwtTokenProvider의 시크릿 키 관리 괜찮아?",
+    "expected_finding": "환경변수 LQ_JWT_SECRET이 없거나 32자 미만이면 소스코드에 하드코딩된 기본 시크릿으로 조용히 폴백해, 배포 시 환경변수 설정을 빠뜨리면 공개된 고정 키로 JWT가 서명되어 토큰 위조가 가능해진다",
+    "expected_file_path": "Backend/src/main/java/com/app/service/user/auth/JwtTokenProvider.java",
+    "expected_line_start": 21,
+    "expected_line_end": 29,
+    "category": "hardcoded_secret",
+    "is_planted": 0
+  },
+  {
+    "question": "영수증 인증 이미지 업로드 처리에 문제 없어?",
+    "expected_finding": "MultipartFile로 받은 영수증 이미지의 확장자/컨텐츠 타입을 전혀 검증하지 않고 원본 파일명에서 확장자만 추출해 그대로 저장해 임의 확장자 업로드가 가능하고, 저장 경로도 D:/fileStorage로 하드코딩되어 있다",
+    "expected_file_path": "Backend/src/main/java/com/app/service/userquest/impl/UserQuestServiceImpl.java",
+    "expected_line_start": 1005,
+    "expected_line_end": 1031,
+    "category": "insecure_file_upload",
+    "is_planted": 0
+  },
+  {
+    "question": "푸시 알림 발송 로직에 N+1 쿼리 있어?",
+    "expected_finding": "dispatchNotifications가 대상자 리스트를 순회하며 target마다 isDuplicateForToday로 DB 조회를 개별 호출해, 구독자 수만큼 쿼리가 발생하는 N+1 패턴이다",
+    "expected_file_path": "Backend/src/main/java/com/app/service/push/impl/PushServiceImpl.java",
+    "expected_line_start": 270,
+    "expected_line_end": 312,
+    "category": "n_plus_one",
+    "is_planted": 0
+  },
+  {
+    "question": "UserAPIController의 findId(아이디 찾기)에서 예외 처리 괜찮아?",
+    "expected_finding": "catch (Exception e) 블록에서 예상치 못한 시스템 예외를 사용자에게 일반 메시지로만 반환하고 어디에도 로깅하지 않아, 운영 중 실제 오류가 발생해도 서버 로그에 흔적이 남지 않는다",
+    "expected_file_path": "Backend/src/main/java/com/app/controller/api/UserAPIController.java",
+    "expected_line_start": 213,
+    "expected_line_end": 221,
+    "category": "exception_handling",
+    "is_planted": 0
+  },
+  {
+    "question": "임시 비밀번호 발급 로직(find-password)에 보안 이슈 없어?",
+    "expected_finding": "generateTemporaryPassword가 100000~999999 범위의 6자리 숫자만 생성하고, 발급 직후 로그인 시도에 대한 잠금/속도 제한이 이 코드 경로에는 보이지 않아 무차별 대입으로 계정을 탈취당할 여지가 있다",
+    "expected_file_path": "Backend/src/main/java/com/app/service/user/impl/UserServiceImpl.java",
+    "expected_line_start": 1039,
+    "expected_line_end": 1042,
+    "category": "weak_credential",
+    "is_planted": 0
+  },
+  {
+    "question": "PushServiceImpl.sendNotificationToTarget()의 catch (Throwable e) 이거 문제 아니야?",
+    "expected_finding": "Exception이 아니라 Throwable을 캐치해서 OutOfMemoryError 같은 심각한 JVM 에러까지 발송 실패로 뭉개고 계속 루프를 도는, 과도하게 넓은 예외 처리 범위다",
+    "expected_file_path": "Backend/src/main/java/com/app/service/push/impl/PushServiceImpl.java",
+    "expected_line_start": 390,
+    "expected_line_end": 400,
+    "category": "exception_handling",
+    "is_planted": 0
+  },
+  {
+    "question": "RewardServiceImpl.exchangeReward()에서 포인트 차감/재고 차감할 때 동시 요청으로 포인트가 이중 차감되거나 재고가 음수가 될 수 있어?",
+    "expected_finding": "겉보기엔 check-then-act 패턴처럼 보이지만 실제 차감은 조건부 원자적 UPDATE문이고 영향받은 row 수를 검사해 실패 시 예외를 던지므로, 동시 요청에 의한 이중 차감/음수 재고 경쟁 조건은 발생하지 않는다",
+    "expected_file_path": "Backend/src/main/java/com/app/service/reward/impl/RewardServiceImpl.java",
+    "expected_line_start": 156,
+    "expected_line_end": 190,
+    "category": "negative",
+    "is_planted": 0
+  },
+  {
+    "question": "BadgeOperationServiceImpl.evaluateAndGrantBadges()에서 동시에 같은 조건을 두 번 충족시키면 배지가 중복 지급될 수 있어?",
+    "expected_finding": "existsUserBadge 체크 후 insertUserBadge를 호출하는 check-then-insert 패턴처럼 보이지만, LQ_USER_BADGE 테이블에 UNIQUE(USER_ID, BADGE_ID) 제약조건이 걸려 있어 동시 요청이 와도 DB가 중복 삽입을 막아준다",
+    "expected_file_path": "Backend/src/main/java/com/app/service/badge/impl/BadgeOperationServiceImpl.java",
+    "expected_line_start": 110,
+    "expected_line_end": 135,
+    "category": "negative",
+    "is_planted": 0
+  },
+  {
+    "question": "BusinessAPIController의 /api/businesses/me 계열 엔드포인트가 businessId를 쿼리 파라미터로 받는데, 다른 매장 businessId를 넣어서 남의 매장 대시보드를 볼 수 있는 IDOR 아니야?",
+    "expected_finding": "resolveBusinessAccessContext에서 JWT의 role이 ADMIN이 아닌데 businessId 파라미터가 지정되면 명시적으로 403 Forbidden을 반환하도록 막아뒀고, 일반 사업자 계정은 항상 자신의 userId로 조회한 business만 사용하게 되어 있어 IDOR로 이어지지 않는다",
+    "expected_file_path": "Backend/src/main/java/com/app/controller/api/BusinessAPIController.java",
+    "expected_line_start": 419,
+    "expected_line_end": 466,
+    "category": "negative",
+    "is_planted": 0
+  },
+  {
+    "question": "admin.jsp에서 리뷰 내용/사업자명을 JS 템플릿 문자열로 조립해서 innerHTML에 넣는데 저장형 XSS 아니야?",
+    "expected_finding": "리뷰 작성자명, 리뷰 내용, 사업자명, 매장 주소 등 사용자 입력이 들어가는 모든 자리에 escapeAdminHtml을 일관되게 적용하고 있어 innerHTML 삽입 전에 이스케이프가 이루어진다",
+    "expected_file_path": "Backend/src/main/webapp/WEB-INF/views/admin/admin.jsp",
+    "expected_line_start": 708,
+    "expected_line_end": 759,
+    "category": "negative",
+    "is_planted": 0
   }
 ]
