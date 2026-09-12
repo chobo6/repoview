@@ -147,6 +147,16 @@ def test_run_eval_writes_eval_run_row_and_links_session(conn, repo_id, seeded_ca
     assert all(r["session_id"] is not None for r in result_rows)
 
 
+def test_run_eval_records_repo_id_on_eval_run(conn, repo_id, seeded_cases):
+    llm = FakeLLM([make_text_response("문제 없음")] * len(seeded_cases))
+    judge_llm = FakeLLM([make_text_response("NO\n근거 없음")] * len(seeded_cases))
+
+    run_eval(conn, repo_id, seeded_cases, llm, judge_llm, model="gpt-4o", phase=2)
+
+    run_row = conn.execute("SELECT repo_id FROM eval_run").fetchone()
+    assert run_row["repo_id"] == repo_id
+
+
 def test_run_eval_isolates_case_failure_and_still_finishes_run(conn, repo_id, seeded_cases):
     # llm has no prepared responses, so run_session's first llm.call() raises immediately
     # for every case (FakeLLM raises AssertionError when responses are exhausted).

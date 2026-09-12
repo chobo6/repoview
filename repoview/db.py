@@ -123,3 +123,23 @@ def _migrate(conn: sqlite3.Connection) -> None:
     session_columns = {row["name"] for row in conn.execute("PRAGMA table_info(session)")}
     if "citation_warnings" not in session_columns:
         conn.execute("ALTER TABLE session ADD COLUMN citation_warnings TEXT")
+
+    eval_run_columns = {row["name"] for row in conn.execute("PRAGMA table_info(eval_run)")}
+    if "repo_id" not in eval_run_columns:
+        conn.execute("ALTER TABLE eval_run ADD COLUMN repo_id INTEGER REFERENCES repo(id)")
+
+    # repo_id가 비어있는 기존 행(마이그레이션 이전에 생성된 eval_run)을 채운다.
+    # WHERE repo_id IS NULL이라 매번 호출해도 안전하고, 이미 채워진 행은 건드리지 않는다.
+    conn.execute(
+        """
+        UPDATE eval_run
+        SET repo_id = (
+            SELECT ec.repo_id
+            FROM eval_result er
+            JOIN eval_case ec ON ec.id = er.eval_case_id
+            WHERE er.eval_run_id = eval_run.id
+            LIMIT 1
+        )
+        WHERE repo_id IS NULL
+        """
+    )

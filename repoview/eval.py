@@ -47,7 +47,7 @@ def run_eval(
     if not cases:
         raise ValueError("eval_case가 없습니다. 먼저 python -m repoview.eval_seed로 시드하세요.")
 
-    eval_run_id = _create_eval_run(conn, phase, model)
+    eval_run_id = _create_eval_run(conn, repo_id, phase, model)
 
     citation_hits = 0
     citation_total = 0
@@ -138,9 +138,9 @@ def _citation_path_exists(conn: sqlite3.Connection, repo_id: int, file_path: str
     return row is not None
 
 
-def _create_eval_run(conn: sqlite3.Connection, phase: int, model: str) -> int:
+def _create_eval_run(conn: sqlite3.Connection, repo_id: int, phase: int, model: str) -> int:
     cursor = conn.execute(
-        "INSERT INTO eval_run (phase, model) VALUES (?, ?)", (phase, model)
+        "INSERT INTO eval_run (repo_id, phase, model) VALUES (?, ?, ?)", (repo_id, phase, model)
     )
     conn.commit()
     return int(cursor.lastrowid)
