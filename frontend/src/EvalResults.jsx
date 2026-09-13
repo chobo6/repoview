@@ -14,6 +14,46 @@ function parseCitationWarnings(raw) {
   }
 }
 
+function DotStrips({ runs }) {
+  const byPhase = new Map()
+  for (const run of runs) {
+    if (run.detection_rate == null) continue
+    if (!byPhase.has(run.phase)) byPhase.set(run.phase, [])
+    byPhase.get(run.phase).push(run)
+  }
+  const phases = [...byPhase.keys()].sort((a, b) => a - b)
+  if (phases.length === 0) return null
+
+  return (
+    <div className="dot-strips">
+      {phases.map((phase) => {
+        const group = byPhase.get(phase)
+        const rates = group.map((r) => r.detection_rate)
+        const min = Math.min(...rates)
+        const max = Math.max(...rates)
+        return (
+          <div className="dot-strip-row" key={phase}>
+            <span className="dot-strip-label">Phase {phase}</span>
+            <div className="dot-strip-track">
+              {group.map((run) => (
+                <span
+                  key={run.id}
+                  className="dot"
+                  style={{ left: `${run.detection_rate * 100}%` }}
+                  title={`${formatPercent(run.detection_rate)} · ${run.started_at}`}
+                />
+              ))}
+            </div>
+            <span className="dot-strip-range">
+              {formatPercent(min)}–{formatPercent(max)} ({group.length}회)
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function EvalResults({ repos }) {
   const [repoId, setRepoId] = useState(repos[0]?.id ?? null)
   const [runs, setRuns] = useState([])
@@ -69,6 +109,9 @@ function EvalResults({ repos }) {
 
       {error && <p className="error">{error}</p>}
 
+      <DotStrips runs={runs} />
+
+      <div className="table-scroll">
       <table className="eval-table">
         <thead>
           <tr>
@@ -104,6 +147,7 @@ function EvalResults({ repos }) {
           ))}
         </tbody>
       </table>
+      </div>
 
       {selectedRun && (
         <section className="eval-detail">
@@ -115,8 +159,11 @@ function EvalResults({ repos }) {
                   <strong>{result.question}</strong> ({result.category}
                   {result.is_planted ? ', 심은 버그' : ''})
                 </p>
-                <p>탐지: {result.detected ? 'O' : 'X'} · 오탐: {result.false_positive ? 'O' : 'X'}</p>
-                <p className="meta">{result.judge_reason}</p>
+                <p className="meta">
+                  <span>탐지 {result.detected ? 'O' : 'X'}</span>
+                  <span>오탐 {result.false_positive ? 'O' : 'X'}</span>
+                </p>
+                <p className="review">{result.judge_reason}</p>
                 {result.session_id && (
                   <button type="button" onClick={() => handleViewSession(result.session_id)}>
                     세션 보기
@@ -134,11 +181,18 @@ function EvalResults({ repos }) {
           <pre className="review">{session.final_review}</pre>
           {parseCitationWarnings(session.citation_warnings).length > 0 && (
             <div className="citation-warning">
-              ⚠ 인용 검증 경고 {parseCitationWarnings(session.citation_warnings).length}건
+              <span className="warning-label">
+                인용 검증 경고 {parseCitationWarnings(session.citation_warnings).length}건
+              </span>
               <ul>
                 {parseCitationWarnings(session.citation_warnings).map((w, i) => (
                   <li key={i}>
-                    {w.file_path}:{w.start_line}-{w.end_line} — {w.issue}
+                    <span className="stamp">
+                      <span>
+                        {w.file_path}:{w.start_line}-{w.end_line}
+                      </span>
+                      <span className="issue">{w.issue}</span>
+                    </span>
                   </li>
                 ))}
               </ul>

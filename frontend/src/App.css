@@ -1,131 +1,501 @@
-.app {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 32px 16px;
-  font-family: system-ui, sans-serif;
+/* ── 토큰 ─────────────────────────────────────────────────────────── */
+
+:root {
+  --paper: #e9e6d8;
+  --paper-raised: #f1efe3;
+  --ink: #1f2320;
+  --ink-soft: #55584f;
+  --rule: #c9c4b4;
+  --rule-strong: #a49d87;
+  --stamp-red: #a63a2e;
+  --stamp-red-soft: #a63a2e26;
+  --verified-teal: #2f6e62;
+  --verified-teal-soft: #2f6e6220;
+
+  --serif: 'Newsreader', 'Gowun Batang', ui-serif, Georgia, serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
 }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --paper: #201f1a;
+    --paper-raised: #29281f;
+    --ink: #e9e6d8;
+    --ink-soft: #b4af9e;
+    --rule: #4a4838;
+    --rule-strong: #6b6850;
+    --stamp-red: #e07a68;
+    --stamp-red-soft: #e07a6830;
+    --verified-teal: #6fbfae;
+    --verified-teal-soft: #6fbfae2a;
+  }
+}
+
+:root[data-theme='dark'] {
+  --paper: #201f1a;
+  --paper-raised: #29281f;
+  --ink: #e9e6d8;
+  --ink-soft: #b4af9e;
+  --rule: #4a4838;
+  --rule-strong: #6b6850;
+  --stamp-red: #e07a68;
+  --stamp-red-soft: #e07a6830;
+  --verified-teal: #6fbfae;
+  --verified-teal-soft: #6fbfae2a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* ── 바탕 ─────────────────────────────────────────────────────────── */
+
+.app {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 40px 20px 80px;
+  font-family: var(--serif);
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.app h1 {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 26px;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+
+/* ── 마스트헤드 ───────────────────────────────────────────────────── */
+
+.masthead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--ink);
+  margin-bottom: 0;
+}
+
+.masthead select {
+  font-family: var(--serif);
+  font-size: 15px;
+  color: var(--ink-soft);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--rule-strong);
+  padding: 2px 0;
+}
+
+/* ── 폴더 탭 ──────────────────────────────────────────────────────── */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+}
+
+.tabs button {
+  font-family: var(--serif);
+  font-size: 14px;
+  color: var(--ink-soft);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-bottom: none;
+  border-radius: 5px 5px 0 0;
+  padding: 8px 18px 7px;
+  cursor: pointer;
+  position: relative;
+  top: 1px;
+}
+
+.tabs button.active {
+  color: var(--ink);
+  background: var(--paper-raised);
+  border-color: var(--ink);
+  font-weight: 500;
+}
+
+.tab-body {
+  border: 1px solid var(--ink);
+  border-top: none;
+  background: var(--paper-raised);
+  padding: 28px 28px 32px;
+}
+
+/* ── 폼 ───────────────────────────────────────────────────────────── */
 
 form {
   display: grid;
-  gap: 12px;
-  margin-bottom: 24px;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+form > label {
+  font-size: 15px;
+  color: var(--ink-soft);
 }
 
 textarea,
 select,
 button {
   font: inherit;
-  padding: 8px;
+}
+
+textarea {
+  font-family: var(--serif);
+  font-size: 16px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: 3px;
+  padding: 12px 14px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+textarea:focus-visible,
+select:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--verified-teal);
+  outline-offset: 2px;
+}
+
+form button[type='submit'] {
+  justify-self: start;
+  font-size: 15px;
+  color: var(--paper);
+  background: var(--ink);
+  border: none;
+  border-radius: 3px;
+  padding: 10px 22px;
+}
+
+form button[type='submit']:disabled {
+  background: var(--ink-soft);
+  cursor: progress;
 }
 
 .error {
-  color: #c0392b;
-}
-
-.review {
-  white-space: pre-wrap;
-  background: #f6f6f6;
-  padding: 16px;
-  border-radius: 6px;
-}
-
-.meta {
-  color: #666;
+  color: var(--stamp-red);
   font-size: 14px;
 }
 
-.trace {
+/* ── 진행 기록 (라이브 트레이스) ──────────────────────────────────── */
+
+.live-steps {
+  list-style: none;
+  padding: 12px 0 4px 18px;
+  margin: 8px 0 0;
   display: grid;
-  gap: 12px;
-  padding-left: 20px;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  border-left: 2px solid var(--rule-strong);
 }
 
-.step code {
+.live-steps li {
+  position: relative;
+}
+
+.live-steps li::before {
+  content: '';
+  position: absolute;
+  left: -22px;
+  top: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--verified-teal);
+}
+
+/* ── 리뷰 결과 ────────────────────────────────────────────────────── */
+
+.result {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 3px double var(--ink);
+}
+
+.result h2,
+.eval-detail h3,
+.result h3 {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin: 0 0 16px;
+}
+
+.meta span {
+  white-space: nowrap;
+}
+
+.review {
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  max-width: 68ch;
+  margin: 0 0 18px;
+}
+
+/* ── 인용 경고 (도장) ─────────────────────────────────────────────── */
+
+.citation-warning {
+  margin: 0 0 22px;
+  padding-top: 4px;
+}
+
+.citation-warning > .warning-label {
   display: block;
-  color: #555;
-  margin: 4px 0;
+  font-size: 13px;
+  color: var(--stamp-red);
+  margin-bottom: 10px;
 }
 
-.step pre {
+.citation-warning ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.stamp {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--stamp-red);
+  background: var(--stamp-red-soft);
+  border: 1px solid var(--stamp-red);
+  border-radius: 2px;
+  padding: 4px 10px;
+  transform: rotate(-1deg);
+}
+
+.citation-warning li:nth-child(even) .stamp {
+  transform: rotate(0.8deg);
+}
+
+.stamp .issue {
+  font-family: var(--serif);
+  color: var(--ink);
+}
+
+/* ── 에이전트 트레이스 (완료된 세션) ──────────────────────────────── */
+
+.trace {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: step;
+  border-top: 1px solid var(--rule);
+}
+
+.trace .step {
+  counter-increment: step;
+  padding: 10px 0 10px 34px;
+  border-bottom: 1px solid var(--rule);
+  position: relative;
+}
+
+.trace .step::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  width: 22px;
+  text-align: right;
+}
+
+.trace .step.error {
+  background: var(--stamp-red-soft);
+}
+
+.trace .step strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.trace .step code {
+  display: block;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin: 4px 0;
+  word-break: break-all;
+}
+
+.trace .step pre {
   max-height: 160px;
   overflow: auto;
-  background: #fafafa;
-  padding: 8px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  padding: 8px 10px;
+  margin: 4px 0 0;
+}
+
+.trace .step p {
+  font-size: 14px;
+  margin: 4px 0 0;
+}
+
+/* ── Eval 결과: 점 스트립 ─────────────────────────────────────────── */
+
+.dot-strips {
+  display: grid;
+  gap: 14px;
+  margin: 20px 0 28px;
+}
+
+.dot-strip-row {
+  display: grid;
+  grid-template-columns: 64px 1fr auto;
+  align-items: center;
+  gap: 14px;
+}
+
+@media (max-width: 420px) {
+  .dot-strip-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .dot-strip-track {
+    height: 24px;
+  }
+
+  .dot-strip-range {
+    justify-self: start;
+  }
+}
+
+.dot-strip-label {
+  font-family: var(--mono);
   font-size: 12px;
+  color: var(--ink-soft);
 }
 
-.step.error pre {
-  background: #fdecea;
+.dot-strip-track {
+  position: relative;
+  height: 20px;
+  border-bottom: 1px solid var(--rule-strong);
 }
 
-.tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
+.dot-strip-track .dot {
+  position: absolute;
+  bottom: -4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ink);
+  border: 1.5px solid var(--paper-raised);
+  transform: translateX(-50%);
 }
 
-.tabs button.active {
-  font-weight: bold;
-  text-decoration: underline;
+.dot-strip-range {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+/* ── Eval 결과: 표 ────────────────────────────────────────────────── */
+
+.table-scroll {
+  overflow-x: auto;
+  margin-bottom: 20px;
 }
 
 .eval-table {
   width: 100%;
   border-collapse: collapse;
-  margin-bottom: 16px;
+  font-size: 13.5px;
 }
 
-.eval-table th,
-.eval-table td {
-  border: 1px solid #ddd;
-  padding: 6px 8px;
+.eval-table th {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 12.5px;
+  color: var(--ink-soft);
   text-align: left;
-  font-size: 14px;
+  padding: 6px 10px;
+  border-bottom: 2px solid var(--ink);
+  white-space: nowrap;
+}
+
+.eval-table td {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
 }
 
 .eval-table tr {
   cursor: pointer;
 }
 
+.eval-table tbody tr:hover {
+  background: var(--stamp-red-soft);
+}
+
 .eval-table tr.selected {
-  background: #eef6ff;
+  background: var(--verified-teal-soft);
+}
+
+.eval-detail {
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+}
+
+.eval-detail ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 4px;
 }
 
 .eval-detail li {
-  border-bottom: 1px solid #eee;
-  padding: 8px 0;
+  border-bottom: 1px solid var(--rule);
+  padding: 12px 0;
 }
 
 .eval-detail li.false-positive {
-  background: #fdecea;
+  background: var(--stamp-red-soft);
 }
 
-.citation-warning {
-  margin-top: 12px;
-  padding: 8px 12px;
-  background: #fff8e1;
-  border: 1px solid #f0c14b;
-  border-radius: 6px;
-  font-size: 14px;
+.eval-detail li p {
+  margin: 0 0 6px;
 }
 
-.citation-warning ul {
-  margin: 4px 0 0;
-  padding-left: 20px;
-}
-
-.live-steps {
-  list-style: none;
-  padding: 0;
-  margin: 12px 0;
-  display: grid;
-  gap: 4px;
+.eval-detail li button {
+  font-family: var(--serif);
   font-size: 13px;
-  color: #555;
-}
-
-.live-steps li {
-  padding: 4px 8px;
-  background: #f6f6f6;
-  border-radius: 4px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--rule-strong);
+  border-radius: 3px;
+  padding: 4px 12px;
 }
