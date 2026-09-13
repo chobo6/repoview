@@ -1,4 +1,4 @@
-const BASE_URL = 'http://localhost:8000/api'
+export const BASE_URL = 'http://localhost:8000/api'
 
 export async function fetchRepos() {
   const response = await fetch(`${BASE_URL}/repos`)
