@@ -1,6 +1,6 @@
 # RepoView
 
-두 개인 프로젝트(LocalQuest — Java/Spring, Songpyeon — Node/TS)를 대상으로, 자연어 질문에 `파일:라인` 인용이 달린 코드 리뷰를 작성해주는 로컬 전용 AI 에이전트 도구입니다. 포트폴리오/면접 데모용으로 만들었습니다.
+두 개인 프로젝트(LocalQuest — Java/Spring, Songpyeon — Node/TS)를 대상으로, 자연어 질문에 `파일:라인` 인용이 달린 코드 리뷰를 작성해주는 로컬 전용 AI 에이전트 도구입니다. 정적 검색뿐 아니라 임베딩 기반 의미 검색(RAG)으로 관련 코드를 찾아 근거로 사용합니다.
 
 ## 이 프로젝트가 다른 "AI 코드리뷰 데모"와 다른 점
 
@@ -46,7 +46,7 @@ npm run dev   # :5173 — CORS가 이 포트로 고정되어 있음
 
 ## 기술 스택
 
-- **백엔드**: Python 3.12, FastAPI, SQLite, Chroma(벡터 DB), OpenAI API
+- **백엔드**: Python 3.12, FastAPI, SQLite, Chroma(벡터 DB, RAG용 의미 검색), OpenAI API(LLM + 임베딩)
 - **프론트엔드**: React 19, Vite (라우터·상태관리 라이브러리 없이 `useState`만)
 - **테스트**: pytest, 실제 OpenAI를 절대 호출하지 않는 `FakeLLM`/`FakeEmbeddingClient` 주입 패턴, 186개 테스트
 
