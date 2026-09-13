@@ -56,8 +56,13 @@ function App() {
 
       source.addEventListener('done', async () => {
         source.close()
-        setSession(await fetchSession(created.session_id))
-        setLoading(false)
+        try {
+          setSession(await fetchSession(created.session_id))
+        } catch (err) {
+          setError(err.message)
+        } finally {
+          setLoading(false)
+        }
       })
 
       source.addEventListener('error', (e) => {
