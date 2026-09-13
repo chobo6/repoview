@@ -284,23 +284,18 @@ stdout의 UTF-8 출력이 안 맞아서 생기는 표시 문제. 파일로 리�
 
 ## 알려진 이슈 (미해결)
 
-이번 세션 코드 리뷰(PR #3)에서 발견했지만 우선순위상 아직 안 고친 것들.
-정정하거나 새 기능을 얹기 전에 먼저 정리하는 게 좋다.
+PR #3 코드 리뷰에서 발견된 항목 중 다음은 이후 작업(Phase 4, eval 셋
+확장 라운드)에서 이미 고쳐졌다 — `estimate_cost_usd`는 이제 가격표에
+없는 모델이면 stderr에 경고를 남기고서 `0.0`을 반환하고, `citation_accuracy`는
+인용이 하나도 없으면 `1.0`이 아니라 `None`으로 계산되며(화면엔 "N/A(인용 없음)"),
+`avg_cost_usd`/`avg_latency_ms`는 성공한 케이스 수(`completed_cases`)로만
+나눠서 실패 케이스가 평균을 왜곡하지 않고, `MAX_ITERATIONS`는 6으로
+올라갔다(Phase 4 판단 이유는 `docs/05-agent-design.md` §3 참고). 경로
+정규화 중복도 `eval_citations.py:normalize_path`로 통합되어 `eval.py`/
+`citation_check.py`가 공용으로 쓴다.
+
+아직 안 고친 것:
 
 - `repoview/eval.py`와 `repoview/eval_seed.py`에 "레포 미인덱싱" 조회+안내
   블록이 그대로 복붙되어 있다 (`get_repo_or_exit(conn, name)` 같은 공용
   헬퍼로 뽑아낼 것).
-- `repoview/eval.py`(`_citation_path_exists`)와 `repoview/eval_citations.py`
-  (`matches_file`)가 각자 `.replace("\\", "/")`로 경로를 정규화한다 —
-  나머지 코드베이스(`embedder.py`, `indexer.py`, `tools/search.py`)는
-  `Path.relative_to(root).as_posix()`를 쓴다. 세 번째 구현이 하나 더
-  생긴 상태.
-- `estimate_cost_usd`가 가격표에 없는 모델에 대해 경고 없이 `0.0`을
-  반환한다 — 모델을 바꾸면 비용 추적이 조용히 무의미해진다.
-- `citation_accuracy`가 인용이 하나도 없을 때 `1.0`(최고점)으로 계산된다.
-- `run_eval`의 `avg_cost_usd`/`avg_latency_ms`가 실패한 케이스도 분모에는
-  포함하고 분자에는 반영하지 않아 평균이 실제보다 낮게 나온다.
-- `MAX_ITERATIONS=3`이 다단계 탐색이 필요한 질문(레포 루트의 설정 파일
-  확인 등)에는 빠듯하다 — 이번 세션 eval에서 `.dockerignore` 케이스가
-  이 한도 때문에 답을 못 내고 끝났다(#19 근처에서 함께 발견, 별도
-  수정 없음).

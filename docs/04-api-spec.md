@@ -47,11 +47,12 @@ POST 요청에서 바로 에이전트를 실행하면, 프론트가 SSE를 연�
 `run_session`은 이미 스텝마다(`trace_step` 테이블) 즉시 commit하고 있어서, 이 커밋을 그대로 이벤트 소스로 재사용한다. `agent/loop.py`를 콜백 기반으로 뜯어고치는 대신, `GET /sessions/{id}/stream`이 `trace_step`을 0.2초 간격으로 폴링해 새 행을 이벤트로 변환하는 방식을 택했다 — `docs/05-agent-design.md` §8 참고.
 
 - **중복 실행 방지**: 연결 시 `UPDATE session SET status='RUNNING' WHERE id=? AND status='PENDING'`으로 원자적으로 선점한다. 이 UPDATE가 실제로 1행을 바꾼 연결만 백그라운드 실행(`asyncio.create_task(asyncio.to_thread(run_session, ...))`)을 시작한다 — 같은 세션에 여러 번 재연결해도 실행은 한 번만 된다.
-- **`run_session` 실패가 상태 기록으로 안 이어지는 경우의 안전망**: `run_session`은 보통 실패 시 스스로 `session.status`를 `FAILED`로 남기지만, 내부 try 블록에 들어가기도 전에 터지는 예외(레포 조회 실패 등)나 `run_session` 자체가 통째로 대체된 경우엔 아무도 상태를 못 바꾼다. 그러면 status가 영원히 `RUNNING`에 머물러 폴링이 끝나는 조건을 못 만나 무한 대기하게 된다 — `_run_in_background`가 `except` 블록에서 `WHERE status='RUNNING'`으로 한 번 더 `FAILED` 처리하는 안전망을 둔 이유다.
-- **탭을 닫아도 실행은 계속된다**: 백그라운드 실행은 SSE 연결의 생존 여부와 무관하게 진행된다(기존 동기식 동작과 같은 성격). 재연결하면 그 시점까지 쌓인 `trace_step`을 재생한 뒤 이어서 폴링한다.
-- **폴링/실행 각자 전용 sqlite 커넥션**을 연다(`Depends(get_db)` 미사용) — FastAPI의 `yield` 의존성이 스트리밍 응답 종료 전에 닫힐 수 있다는 함정을 피하기 위해서다. 두 커넥션이 같은 파일에 동시 접근하므로 `get_connection()`에 `PRAGMA busy_timeout = 5000`(5초)을 추가했다.
+- **`run_session` 실패가 상태 기록으로 안 이어지는 경우의 안전망**: `run_session`은 보통 실패 시 스스로 `session.status`를 `FAILED`로 남기지만, 내부 try 블록에 들어가기도 전에 터지는 예외(레포 조회 실패 등)나 `run_session` 자체가 통째로 대체된 경우엔 아무도 상태를 못 바꾼다. 그러면 status가 영원히 `RUNNING`에 머물러 폴링이 끝나는 조건을 못 만나 무한 대기하게 된다 — `_run_in_background`가 `except` 블록에서 `WHERE status='RUNNING'`으로 한 번 더 `FAILED` 처리하는 안전망을 둔 이유다. 이 안전망도 `finished_at`을 같이 채운다 — 처음엔 `status`/`error`만 갱신해서 "종료됐는데 `finished_at`은 NULL"인 행이 남는 문제가 있었다.
+- **`citation_warnings`와 상태 커밋은 한 트랜잭션**: `_finish`는 인용 사후검증(`verify_citations`)과 그 결과 기록을 먼저 하고, 곧바로 `status`/`final_review` UPDATE를 하되 **둘 다 commit은 한 번만** 한다. 처음엔 두 번 나눠 커밋했는데, 그러면 SSE 폴링이 "상태만 반영되고 citation_warnings는 아직 NULL인" 순간을 관측할 수 있는 레이스가 있었다 — 인용 검증 자체가 실패해도(예: 마이그레이션 누락) 그 예외는 잡히고 뒤이은 status UPDATE는 같은(아직 커밋 안 된) 트랜잭션 안에서 정상 실행되므로, "검증 실패가 상태 기록을 막으면 안 된다"는 원래 요구사항은 그대로 지켜진다.
+- **탭을 닫아도 실행은 계속된다**: 백그라운드 실행은 SSE 연결의 생존 여부와 무관하게 진행된다(기존 동기식 동작과 같은 성격). 재연결하면 그 시점까지 쌓인 `trace_step`을 재생한 뒤 이어서 폴링한다. 프론트엔드는 네트워크 순단으로 EventSource가 자체 발생시키는 연결 에러(서버가 보낸 `event: error`와 달리 페이로드가 없음)를 받으면 스트림을 닫지 않고 브라우저의 기본 자동 재연결에 맡긴다 — 여기서 닫아버리면 이미 시작된(돈 드는) 세션 결과를 다시는 볼 수 없기 때문이다.
+- **폴링/실행 각자 전용 sqlite 커넥션**을 연다(`Depends(get_db)` 미사용) — FastAPI의 `yield` 의존성이 스트리밍 응답 종료 전에 닫힐 수 있다는 함정을 피하기 위해서다. 두 커넥션이 같은 파일에 동시 접근하므로 `get_connection()`에 `PRAGMA busy_timeout = 5000`(5초)과 `PRAGMA journal_mode = WAL`을 추가했다.
 - **트레이드오프**: 폴링 방식이라 `step_started`가 "지금 막 시작함"이 아니라 "완료된 걸 최대 0.2초 늦게 발견함"이 되어, 사실상 `step_completed`와 거의 동시에 발생한다. 진행 중 스피너 같은 진짜 실시간 표시는 못 만들지만, 로컬 단일 사용자 데모 도구 규모에서는 이 정도로 충분하다고 판단했다.
-- **`done` 이벤트의 `cost_usd`**: `session.cost_usd` 컬럼은 원래도 채워진 적이 없다(항상 0). DB에 영구 저장하는 것은 이 작업 범위 밖으로 두고, `done` 이벤트를 만드는 시점에 `eval.py:estimate_cost_usd(model, input_tokens, output_tokens)`를 재사용해 즉석 계산만 한다.
+- **`done` 이벤트의 `cost_usd`**: `session.cost_usd` 컬럼은 원래도 채워진 적이 없다(항상 0). DB에 영구 저장하는 것은 이 작업 범위 밖으로 두고, `done` 이벤트를 만드는 시점에 `eval.py:estimate_cost_usd(model, input_tokens, output_tokens)`를 재사용해 즉석 계산만 한다 — 프론트엔드는 이 값을 세션 새로고침(`GET /sessions/{id}`) 전에 받은 `done` 페이로드에서 그대로 잡아둬서 리뷰 결과 메타 줄에 보여준다(DB 컬럼을 다시 읽는 게 아니다).
 
 ### SSE 이벤트 스키마
 
