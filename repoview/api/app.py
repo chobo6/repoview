@@ -1,18 +1,24 @@
+import asyncio
+import json
 import sqlite3
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from repoview.agent.llm import OpenAILLM
 from repoview.agent.loop import run_session
 from repoview.agent.prompts import build_repo_overview
-from repoview.config import CURRENT_PHASE, OPENAI_MODEL
+from repoview.config import CURRENT_PHASE, DB_PATH, OPENAI_MODEL
 from repoview.db import get_connection, init_db
 from repoview.embedding_client import OpenAIEmbeddingClient
+from repoview.eval import estimate_cost_usd
+
+POLL_INTERVAL_S = 0.2
 
 
 def _error_response(status_code: int, message: str) -> JSONResponse:
@@ -75,6 +81,10 @@ def get_embedding_client():
     return OpenAIEmbeddingClient()
 
 
+def get_db_path() -> Path:
+    return DB_PATH
+
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     return _error_response(exc.status_code, exc.detail)
@@ -103,8 +113,6 @@ def get_repo(repo_id: int, conn: sqlite3.Connection = Depends(get_db)) -> dict:
 def create_session(
     payload: SessionRequest,
     conn: sqlite3.Connection = Depends(get_db),
-    llm=Depends(get_llm),
-    embedding_client=Depends(get_embedding_client),
 ) -> dict:
     question = payload.question.strip()
     if not question:
@@ -114,23 +122,128 @@ def create_session(
     if repo is None:
         raise HTTPException(status_code=404, detail=f"레포를 찾을 수 없습니다: {payload.repo_id}")
 
-    result = run_session(
-        conn,
-        payload.repo_id,
-        question,
-        llm,
-        model=OPENAI_MODEL,
-        phase=CURRENT_PHASE,
-        embedding_client=embedding_client,
+    cursor = conn.execute(
+        "INSERT INTO session (repo_id, question, status, model, phase) VALUES (?, ?, 'PENDING', ?, ?)",
+        (payload.repo_id, question, OPENAI_MODEL, CURRENT_PHASE),
     )
-    return {
-        "session_id": result.session_id,
-        "status": result.status,
-        "final_review": result.final_review,
-        "iteration_count": result.iteration_count,
-        "input_tokens": result.input_tokens,
-        "output_tokens": result.output_tokens,
-    }
+    conn.commit()
+    return {"session_id": int(cursor.lastrowid), "status": "PENDING"}
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _run_in_background(
+    db_path: Path,
+    session_id: int,
+    repo_id: int,
+    question: str,
+    model: str,
+    phase: int,
+    llm,
+    embedding_client,
+) -> None:
+    conn = get_connection(db_path)
+    try:
+        run_session(
+            conn, repo_id, question, llm,
+            model=model, phase=phase, session_id=session_id, embedding_client=embedding_client,
+        )
+    except Exception as exc:
+        # run_session은 보통 실패 시 이미 session.status를 FAILED로 기록하지만,
+        # 그 내부 try 블록에 들어가기도 전에 터지는 예외(레포 조회 실패 등)나
+        # run_session 자체가 통째로 대체된 경우(테스트의 monkeypatch 등)엔
+        # 아무도 상태를 못 바꾼다. 그러면 status가 영원히 RUNNING에 머물러
+        # SSE 폴링 루프가 끝나는 조건을 절대 못 만나 무한 대기하게 된다.
+        # 그래서 여기서 최후의 안전망으로 한 번 더 FAILED 처리한다 —
+        # 이미 FAILED/COMPLETED로 끝났다면 WHERE status='RUNNING' 조건이
+        # 막아주므로 덮어쓰지 않는다.
+        conn.execute(
+            "UPDATE session SET status = 'FAILED', error = ? WHERE id = ? AND status = 'RUNNING'",
+            (str(exc), session_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@app.get("/api/sessions/{session_id}/stream")
+async def stream_session(
+    session_id: int,
+    db_path: Path = Depends(get_db_path),
+    llm=Depends(get_llm),
+    embedding_client=Depends(get_embedding_client),
+) -> StreamingResponse:
+    conn = get_connection(db_path)
+    row = conn.execute("SELECT * FROM session WHERE id = ?", (session_id,)).fetchone()
+    if row is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail=f"세션을 찾을 수 없습니다: {session_id}")
+
+    claim = conn.execute(
+        "UPDATE session SET status = 'RUNNING' WHERE id = ? AND status = 'PENDING'", (session_id,)
+    )
+    conn.commit()
+    if claim.rowcount == 1:
+        asyncio.create_task(
+            asyncio.to_thread(
+                _run_in_background,
+                db_path, session_id, row["repo_id"], row["question"], row["model"], row["phase"],
+                llm, embedding_client,
+            )
+        )
+
+    async def event_generator():
+        last_step = 0
+        try:
+            while True:
+                new_rows = conn.execute(
+                    "SELECT * FROM trace_step WHERE session_id = ? AND step_no > ? ORDER BY step_no",
+                    (session_id, last_step),
+                ).fetchall()
+                for trace_row in new_rows:
+                    last_step = trace_row["step_no"]
+                    if trace_row["type"] == "TOOL_CALL":
+                        yield _sse("step_started", {
+                            "step_no": trace_row["step_no"],
+                            "type": trace_row["type"],
+                            "tool_name": trace_row["tool_name"],
+                            "tool_args": json.loads(trace_row["tool_args"]) if trace_row["tool_args"] else {},
+                        })
+                        yield _sse("step_completed", {
+                            "step_no": trace_row["step_no"],
+                            "result_preview": (trace_row["tool_result"] or "")[:500],
+                            "latency_ms": trace_row["latency_ms"],
+                            "error": trace_row["error"],
+                        })
+                    elif trace_row["type"] == "LLM_CALL" and trace_row["assistant_text"]:
+                        yield _sse("assistant_message", {"text": trace_row["assistant_text"]})
+
+                session_row = conn.execute(
+                    "SELECT status, final_review, iteration_count, model, input_tokens, output_tokens, error "
+                    "FROM session WHERE id = ?",
+                    (session_id,),
+                ).fetchone()
+                if session_row["status"] not in ("PENDING", "RUNNING"):
+                    if session_row["status"] == "FAILED":
+                        yield _sse("error", {"message": session_row["error"] or "알 수 없는 오류"})
+                    else:
+                        cost = estimate_cost_usd(
+                            session_row["model"], session_row["input_tokens"], session_row["output_tokens"]
+                        )
+                        yield _sse("done", {
+                            "status": session_row["status"],
+                            "final_review": session_row["final_review"],
+                            "iteration_count": session_row["iteration_count"],
+                            "cost_usd": cost,
+                        })
+                    return
+                await asyncio.sleep(POLL_INTERVAL_S)
+        finally:
+            conn.close()
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.get("/api/sessions")
