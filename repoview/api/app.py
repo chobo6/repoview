@@ -161,7 +161,8 @@ def _run_in_background(
         # 이미 FAILED/COMPLETED로 끝났다면 WHERE status='RUNNING' 조건이
         # 막아주므로 덮어쓰지 않는다.
         conn.execute(
-            "UPDATE session SET status = 'FAILED', error = ? WHERE id = ? AND status = 'RUNNING'",
+            "UPDATE session SET status = 'FAILED', error = ?, finished_at = datetime('now') "
+            "WHERE id = ? AND status = 'RUNNING'",
             (str(exc), session_id),
         )
         conn.commit()

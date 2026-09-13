@@ -122,7 +122,7 @@ def test_list_sessions(client):
     assert len(response.json()) >= 1
 
 
-def test_stream_emits_error_event_and_keeps_cors_header_when_run_session_crashes(client, monkeypatch):
+def test_stream_emits_error_event_and_keeps_cors_header_when_run_session_crashes(client, conn, monkeypatch):
     from repoview.api import app as app_module
 
     def boom(*args, **kwargs):
@@ -151,6 +151,12 @@ def test_stream_emits_error_event_and_keeps_cors_header_when_run_session_crashes
             events.append((event_name, json.loads(line[len("data: "):])))
     assert events[-1][0] == "error"
     assert events[-1][1]["message"] == "서버 내부 오류 테스트"
+
+    row = conn.execute(
+        "SELECT status, finished_at FROM session WHERE id = ?", (session_id,)
+    ).fetchone()
+    assert row["status"] == "FAILED"
+    assert row["finished_at"] is not None
 
 
 def test_stream_still_works_with_real_embedding_client_dependency_overridden(client):

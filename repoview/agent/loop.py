@@ -211,12 +211,16 @@ def _finish(
     totals: dict,
     error: str | None = None,
 ) -> SessionResult:
-    # 인용 검증/기록을 상태 커밋보다 먼저 수행한다 — 반대 순서(예전 구현)였을 때는
-    # SSE 폴링이 status만 반영된 순간을 관측해 citation_warnings를 아직 NULL인 채로
-    # 읽어가는 레이스가 있었다. 상태 UPDATE를 마지막에 커밋하면, 외부에서 터미널
-    # 상태를 관측하는 시점엔 citation_warnings도 이미 반영되어 있음이 보장된다.
-    # 인용 검증/기록 자체가 실패해도(어드바이저리 기능, 예: 마이그레이션 누락) 이미
-    # 완료된 세션의 status/final_review 커밋은 항상 뒤따라야 하므로 별도로 감싼다.
+    # 인용 검증/기록과 상태 UPDATE를 하나의 트랜잭션으로 묶는다 — 중간에
+    # conn.commit()을 하지 않고 맨 끝에 한 번만 커밋한다(_record_citation_warnings는
+    # 이제 자체 commit이 없다). 두 커밋으로 나뉘어 있으면 그 사이에 SSE 폴링이
+    # status만 반영된 순간을 관측하는 레이스가 생기고, 그 사이에 프로세스가 죽으면
+    # 이미 다 계산된 리뷰가 상태 미기록인 채 영원히 RUNNING에 남는 크래시 윈도우까지
+    # 생긴다 — 하나의 커밋으로 묶으면 둘 다 사라진다. 인용 검증/기록 자체가
+    # 실패해도(어드바이저리 기능, 예: 마이그레이션 누락) 그 예외는 여기서 잡히고,
+    # 뒤이은 status UPDATE는 같은(아직 커밋 안 된) 트랜잭션 안에서 정상적으로
+    # 실행된다 — SQLite는 한 statement의 오류만으로 트랜잭션 전체를 무효화하지
+    # 않으므로, status/final_review 커밋은 인용 실패와 무관하게 항상 뒤따른다.
     if final_review:
         try:
             warnings = verify_citations(conn, repo_id, session_id, final_review)
@@ -250,8 +254,9 @@ def _finish(
 
 
 def _record_citation_warnings(conn, session_id: int, warnings: list[dict]) -> None:
+    # commit은 일부러 안 한다 — _finish의 상태 UPDATE와 한 트랜잭션으로 묶여
+    # 그쪽의 conn.commit() 한 번으로 같이 커밋된다.
     conn.execute(
         "UPDATE session SET citation_warnings = ? WHERE id = ?",
         (json.dumps(warnings, ensure_ascii=False), session_id),
     )
-    conn.commit()
