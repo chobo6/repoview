@@ -102,6 +102,8 @@ function App() {
         </button>
       </nav>
 
+      {error && <p className="error">{error}</p>}
+
       <div className="tab-body">
         {tab === 'ask' && (
           <>
@@ -127,8 +129,6 @@ function App() {
                 {loading ? '분석 중…' : '리뷰 요청'}
               </button>
             </form>
-
-            {error && <p className="error">{error}</p>}
 
             {liveSteps.length > 0 && (
               <ul className="live-steps">

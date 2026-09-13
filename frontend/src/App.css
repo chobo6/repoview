@@ -182,6 +182,7 @@ form button[type='submit']:disabled {
 .error {
   color: var(--stamp-red);
   font-size: 14px;
+  margin: 10px 0 0;
 }
 
 /* ── 진행 기록 (라이브 트레이스) ──────────────────────────────────── */
