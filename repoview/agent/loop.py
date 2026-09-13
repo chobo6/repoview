@@ -211,20 +211,12 @@ def _finish(
     totals: dict,
     error: str | None = None,
 ) -> SessionResult:
-    # 세션 상태 기록은 인용 검증과 완전히 분리한다 — 인용 검증(어드바이저리 기능)이
-    # 실패하거나 citation_warnings 기록 자체가 실패해도(예: 마이그레이션 누락) 이미
-    # 완료된 세션의 status/final_review는 항상 남아야 한다.
-    conn.execute(
-        """
-        UPDATE session
-        SET status = ?, final_review = ?, iteration_count = ?,
-            input_tokens = ?, output_tokens = ?, error = ?, finished_at = datetime('now')
-        WHERE id = ?
-        """,
-        (status, final_review, iteration, totals["input"], totals["output"], error, session_id),
-    )
-    conn.commit()
-
+    # 인용 검증/기록을 상태 커밋보다 먼저 수행한다 — 반대 순서(예전 구현)였을 때는
+    # SSE 폴링이 status만 반영된 순간을 관측해 citation_warnings를 아직 NULL인 채로
+    # 읽어가는 레이스가 있었다. 상태 UPDATE를 마지막에 커밋하면, 외부에서 터미널
+    # 상태를 관측하는 시점엔 citation_warnings도 이미 반영되어 있음이 보장된다.
+    # 인용 검증/기록 자체가 실패해도(어드바이저리 기능, 예: 마이그레이션 누락) 이미
+    # 완료된 세션의 status/final_review 커밋은 항상 뒤따라야 하므로 별도로 감싼다.
     if final_review:
         try:
             warnings = verify_citations(conn, repo_id, session_id, final_review)
@@ -235,6 +227,17 @@ def _finish(
                 f"[경고] 인용 사후검증 실패 (session_id={session_id}): {type(exc).__name__}: {exc}",
                 file=sys.stderr,
             )
+
+    conn.execute(
+        """
+        UPDATE session
+        SET status = ?, final_review = ?, iteration_count = ?,
+            input_tokens = ?, output_tokens = ?, error = ?, finished_at = datetime('now')
+        WHERE id = ?
+        """,
+        (status, final_review, iteration, totals["input"], totals["output"], error, session_id),
+    )
+    conn.commit()
 
     return SessionResult(
         session_id=session_id,

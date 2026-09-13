@@ -19,6 +19,7 @@ from repoview.embedding_client import OpenAIEmbeddingClient
 from repoview.eval import estimate_cost_usd
 
 POLL_INTERVAL_S = 0.2
+_background_tasks: set[asyncio.Task] = set()
 
 
 def _error_response(status_code: int, message: str) -> JSONResponse:
@@ -66,7 +67,7 @@ class SessionRequest(BaseModel):
 
 def get_db():
     """요청마다 연결을 열고 반드시 닫는다. 스키마 초기화는 startup에서 한 번만 한다."""
-    conn = get_connection()
+    conn = get_connection(get_db_path())
     try:
         yield conn
     finally:
@@ -176,23 +177,29 @@ async def stream_session(
     embedding_client=Depends(get_embedding_client),
 ) -> StreamingResponse:
     conn = get_connection(db_path)
-    row = conn.execute("SELECT * FROM session WHERE id = ?", (session_id,)).fetchone()
-    if row is None:
-        conn.close()
-        raise HTTPException(status_code=404, detail=f"세션을 찾을 수 없습니다: {session_id}")
+    try:
+        row = conn.execute("SELECT * FROM session WHERE id = ?", (session_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"세션을 찾을 수 없습니다: {session_id}")
 
-    claim = conn.execute(
-        "UPDATE session SET status = 'RUNNING' WHERE id = ? AND status = 'PENDING'", (session_id,)
-    )
-    conn.commit()
+        claim = conn.execute(
+            "UPDATE session SET status = 'RUNNING' WHERE id = ? AND status = 'PENDING'", (session_id,)
+        )
+        conn.commit()
+    except Exception:
+        conn.close()
+        raise
+
     if claim.rowcount == 1:
-        asyncio.create_task(
+        task = asyncio.create_task(
             asyncio.to_thread(
                 _run_in_background,
                 db_path, session_id, row["repo_id"], row["question"], row["model"], row["phase"],
                 llm, embedding_client,
             )
         )
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
 
     async def event_generator():
         last_step = 0

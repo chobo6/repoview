@@ -114,7 +114,7 @@ function App() {
 
           {error && <p className="error">{error}</p>}
 
-          {loading && liveSteps.length > 0 && (
+          {liveSteps.length > 0 && (
             <ul className="live-steps">
               {liveSteps.map((line, i) => (
                 <li key={i}>{line}</li>

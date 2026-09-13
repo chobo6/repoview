@@ -57,13 +57,20 @@ def test_get_missing_repo_returns_404(client):
     assert "error" in response.json()
 
 
-def test_create_session_returns_pending_status(client):
+def test_create_session_returns_pending_status(client, conn):
     repo_id = client.get("/api/repos").json()[0]["id"]
     response = client.post("/api/sessions", json={"repo_id": repo_id, "question": "성능 문제?"})
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "PENDING"
     assert body["session_id"] > 0
+
+    row = conn.execute("SELECT status FROM session WHERE id = ?", (body["session_id"],)).fetchone()
+    assert row["status"] == "PENDING"
+    trace_count = conn.execute(
+        "SELECT COUNT(*) AS c FROM trace_step WHERE session_id = ?", (body["session_id"],)
+    ).fetchone()["c"]
+    assert trace_count == 0
 
 
 def test_create_session_with_unknown_repo_returns_404(client):
@@ -134,7 +141,16 @@ def test_stream_emits_error_event_and_keeps_cors_header_when_run_session_crashes
 
     assert response.status_code == 200
     assert response.headers.get("access-control-allow-origin") == "http://localhost:5173"
-    assert "event: error" in response.text
+
+    events = []
+    event_name = None
+    for line in response.text.splitlines():
+        if line.startswith("event: "):
+            event_name = line[len("event: "):]
+        elif line.startswith("data: "):
+            events.append((event_name, json.loads(line[len("data: "):])))
+    assert events[-1][0] == "error"
+    assert events[-1][1]["message"] == "서버 내부 오류 테스트"
 
 
 def test_stream_still_works_with_real_embedding_client_dependency_overridden(client):
@@ -264,18 +280,20 @@ def test_stream_missing_session_returns_404(client):
     assert response.status_code == 404
 
 
-def test_stream_emits_done_event_with_cost_usd(client):
+def test_stream_emits_done_event_with_cost_usd(client, conn):
     repo_id = client.get("/api/repos").json()[0]["id"]
     session_id = client.post(
         "/api/sessions", json={"repo_id": repo_id, "question": "질문"}
     ).json()["session_id"]
+    conn.execute("UPDATE session SET model = 'gpt-4o' WHERE id = ?", (session_id,))
+    conn.commit()
 
     events, _ = _consume_stream(client, session_id)
     done_events = [payload for name, payload in events if name == "done"]
     assert len(done_events) == 1
     assert done_events[0]["status"] == "COMPLETED"
     assert done_events[0]["final_review"] == "리뷰 결과"
-    assert done_events[0]["cost_usd"] >= 0
+    assert done_events[0]["cost_usd"] == pytest.approx(0.00075)
 
 
 def test_stream_emits_step_started_and_completed_for_tool_call(conn, mini_repo, monkeypatch, tmp_path):
@@ -326,6 +344,13 @@ def test_reconnect_to_completed_session_replays_trace_without_rerunning(client):
     assert sum(1 for s in trace if s["type"] == "LLM_CALL") == 1
 
 
+# 주의: FastAPI TestClient는 두 스레드의 client.get() 호출을 하나의 공유 이벤트루프에
+# 태스크로 올리고, claim 로직(SELECT→UPDATE→commit)엔 await 지점이 없어 실제로는
+# 인터리빙되지 않는다 — 즉 이 테스트는 원자적 CAS(UPDATE ... WHERE status='PENDING')와
+# 비원자적(check-then-act) 구현을 구분하지 못한다. 프로덕션의 SQL 레벨 원자성 자체는
+# 별도로 코드 리뷰에서 검증됨(진짜 다중 프로세스 동시성에서만 의미 있는 방어선이라
+# 이 harness로는 재현이 안 됨). 제대로 검증하려면 실제 uvicorn 서버+소켓 기반 테스트가
+# 필요한데, 이 프로젝트 규모 대비 과하다고 판단해 보류함.
 def test_concurrent_stream_connections_only_trigger_one_execution(client):
     import threading
 
