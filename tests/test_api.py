@@ -23,11 +23,11 @@ def client(conn, mini_repo, monkeypatch, tmp_path):
     app.dependency_overrides.clear()
 
 
-def _consume_stream(client, session_id):
+def _consume_stream(client, session_id, headers=None):
     """SSE 스트림을 끝(done 또는 error)까지 소비하고 [(이벤트명, payload), ...]를 반환한다.
     TestClient의 동기 client.get()은 StreamingResponse가 완전히 끝날 때까지 블로킹하므로,
     이 함수가 반환하는 시점엔 이미 세션 실행이 끝나 있다."""
-    response = client.get(f"/api/sessions/{session_id}/stream")
+    response = client.get(f"/api/sessions/{session_id}/stream", headers=headers)
     events = []
     event_name = None
     for line in response.text.splitlines():
@@ -134,21 +134,12 @@ def test_stream_emits_error_event_and_keeps_cors_header_when_run_session_crashes
         "/api/sessions", json={"repo_id": repo_id, "question": "질문"}
     ).json()["session_id"]
 
-    response = client.get(
-        f"/api/sessions/{session_id}/stream",
-        headers={"Origin": "http://localhost:5173"},
+    events, response = _consume_stream(
+        client, session_id, headers={"Origin": "http://localhost:5173"}
     )
 
     assert response.status_code == 200
     assert response.headers.get("access-control-allow-origin") == "http://localhost:5173"
-
-    events = []
-    event_name = None
-    for line in response.text.splitlines():
-        if line.startswith("event: "):
-            event_name = line[len("event: "):]
-        elif line.startswith("data: "):
-            events.append((event_name, json.loads(line[len("data: "):])))
     assert events[-1][0] == "error"
     assert events[-1][1]["message"] == "서버 내부 오류 테스트"
 

@@ -21,6 +21,7 @@ function App() {
   const [error, setError] = useState(null)
   const [tab, setTab] = useState('ask')
   const [liveSteps, setLiveSteps] = useState([])
+  const [costUsd, setCostUsd] = useState(null)
 
   useEffect(() => {
     fetchRepos()
@@ -39,6 +40,7 @@ function App() {
     setError(null)
     setSession(null)
     setLiveSteps([])
+    setCostUsd(null)
 
     try {
       const created = await createSession(repoId, question)
@@ -54,8 +56,9 @@ function App() {
         setLiveSteps((prev) => [...prev, data.text])
       })
 
-      source.addEventListener('done', async () => {
+      source.addEventListener('done', async (e) => {
         source.close()
+        setCostUsd(JSON.parse(e.data).cost_usd)
         try {
           setSession(await fetchSession(created.session_id))
         } catch (err) {
@@ -66,8 +69,16 @@ function App() {
       })
 
       source.addEventListener('error', (e) => {
+        if (!e.data) {
+          // 서버가 보낸 진짜 에러가 아니라 순수 연결 문제(네트워크 순단 등) —
+          // 세션은 백그라운드에서 계속 실행되고 있으므로 여기서 포기하고 닫아버리면
+          // 이미 시작된(돈 드는) 세션 결과를 다시는 볼 수 없게 된다. EventSource의
+          // 기본 자동 재연결에 맡긴다 — 재연결하면 서버가 지금까지의 진행 상황을
+          // 재생한 뒤 이어서 폴링하도록 이미 설계되어 있다.
+          return
+        }
         source.close()
-        setError(e.data ? JSON.parse(e.data).message : '스트림 연결이 끊어졌습니다')
+        setError(JSON.parse(e.data).message)
         setLoading(false)
       })
     } catch (err) {
@@ -134,6 +145,7 @@ function App() {
                   <span>상태 {session.status}</span>
                   <span>{session.iteration_count}턴</span>
                   <span>토큰 {session.input_tokens + session.output_tokens}</span>
+                  {costUsd != null && <span>${costUsd.toFixed(4)}</span>}
                 </p>
                 <pre className="review">{session.final_review}</pre>
 
