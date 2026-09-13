@@ -282,20 +282,16 @@ stdout의 UTF-8 출력이 안 맞아서 생기는 표시 문제. 파일로 리�
 **해결**: 코드 수정 없음 — 디버깅 중 "진짜 에러 메시지가 깨진 건지"
 헷갈리지 않도록 알아두면 된다.
 
-## 알려진 이슈 (미해결)
+## PR #3 코드 리뷰 지적사항 후속 조치 (전부 해결됨)
 
-PR #3 코드 리뷰에서 발견된 항목 중 다음은 이후 작업(Phase 4, eval 셋
-확장 라운드)에서 이미 고쳐졌다 — `estimate_cost_usd`는 이제 가격표에
-없는 모델이면 stderr에 경고를 남기고서 `0.0`을 반환하고, `citation_accuracy`는
-인용이 하나도 없으면 `1.0`이 아니라 `None`으로 계산되며(화면엔 "N/A(인용 없음)"),
-`avg_cost_usd`/`avg_latency_ms`는 성공한 케이스 수(`completed_cases`)로만
-나눠서 실패 케이스가 평균을 왜곡하지 않고, `MAX_ITERATIONS`는 6으로
-올라갔다(Phase 4 판단 이유는 `docs/05-agent-design.md` §3 참고). 경로
-정규화 중복도 `eval_citations.py:normalize_path`로 통합되어 `eval.py`/
+PR #3 리뷰에서 나온 5건은 이후 작업(Phase 4, eval 셋 확장 라운드,
+문서 정리 라운드)을 거치며 전부 고쳐졌다 — `estimate_cost_usd`는 이제
+가격표에 없는 모델이면 stderr에 경고를 남기고서 `0.0`을 반환하고,
+`citation_accuracy`는 인용이 하나도 없으면 `1.0`이 아니라 `None`으로
+계산되며(화면엔 "N/A(인용 없음)"), `avg_cost_usd`/`avg_latency_ms`는
+성공한 케이스 수(`completed_cases`)로만 나눠서 실패 케이스가 평균을
+왜곡하지 않고, `MAX_ITERATIONS`는 6으로 올라갔다(Phase 4 판단 이유는
+`docs/05-agent-design.md` §3 참고). 경로 정규화 중복은
+`eval_citations.py:normalize_path`로, "레포 미인덱싱" 조회+안내 블록
+중복은 `db.py:get_repo_or_exit`로 각각 통합되어 `eval.py`/`eval_seed.py`/
 `citation_check.py`가 공용으로 쓴다.
-
-아직 안 고친 것:
-
-- `repoview/eval.py`와 `repoview/eval_seed.py`에 "레포 미인덱싱" 조회+안내
-  블록이 그대로 복붙되어 있다 (`get_repo_or_exit(conn, name)` 같은 공용
-  헬퍼로 뽑아낼 것).
