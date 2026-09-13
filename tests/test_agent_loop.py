@@ -373,3 +373,19 @@ def test_citation_warnings_write_failure_does_not_affect_session_status(conn, re
     assert row["status"] == "COMPLETED"
     assert row["final_review"] is not None
     assert row["citation_warnings"] is None
+
+
+def test_run_session_uses_provided_session_id_without_creating_new_row(conn, repo_id):
+    cursor = conn.execute(
+        "INSERT INTO session (repo_id, question, status, model, phase) VALUES (?, 'q', 'RUNNING', '', 3)",
+        (repo_id,),
+    )
+    conn.commit()
+    existing_id = cursor.lastrowid
+
+    llm = FakeLLM([make_text_response("문제 없음")])
+    result = run_session(conn, repo_id, "질문", llm, session_id=existing_id)
+
+    assert result.session_id == existing_id
+    count = conn.execute("SELECT COUNT(*) AS c FROM session").fetchone()["c"]
+    assert count == 1

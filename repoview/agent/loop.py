@@ -38,6 +38,7 @@ def run_session(
     max_iterations: int | None = None,
     max_session_tokens: int | None = None,
     embedding_client=None,
+    session_id: int | None = None,
 ) -> SessionResult:
     limit = max_iterations if max_iterations is not None else MAX_ITERATIONS
     token_limit = max_session_tokens if max_session_tokens is not None else MAX_SESSION_TOKENS
@@ -49,7 +50,8 @@ def run_session(
     system_prompt = build_system_prompt(build_repo_overview(conn, repo_id))
     collection = _resolve_collection(repo["name"], embedding_client)
 
-    session_id = _create_session(conn, repo_id, question, model, phase)
+    if session_id is None:
+        session_id = _create_session(conn, repo_id, question, model, phase)
 
     step_no = 0
     totals = {"input": 0, "output": 0}
