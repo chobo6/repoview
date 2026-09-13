@@ -1,6 +1,8 @@
 import sqlite3
 
-from repoview.db import get_connection, init_db
+import pytest
+
+from repoview.db import get_connection, get_repo_or_exit, init_db
 
 EXPECTED_TABLES = {
     "repo", "repo_file", "session", "trace_step",
@@ -140,3 +142,20 @@ def test_get_connection_sets_busy_timeout(tmp_path):
     value = conn.execute("PRAGMA busy_timeout").fetchone()[0]
     assert value == 5000
     conn.close()
+
+
+def test_get_repo_or_exit_returns_id_for_known_repo(tmp_path):
+    conn = get_connection(tmp_path / "test.db")
+    init_db(conn)
+    conn.execute("INSERT INTO repo (id, name, root_path) VALUES (1, 'MiniRepo', '/r')")
+    conn.commit()
+
+    assert get_repo_or_exit(conn, "MiniRepo") == 1
+
+
+def test_get_repo_or_exit_exits_for_unknown_repo(tmp_path):
+    conn = get_connection(tmp_path / "test.db")
+    init_db(conn)
+
+    with pytest.raises(SystemExit, match="인덱싱되지 않았습니다"):
+        get_repo_or_exit(conn, "NoSuchRepo")

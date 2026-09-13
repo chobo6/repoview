@@ -7,7 +7,7 @@ import time
 from repoview.agent.llm import LLM, OpenAILLM
 from repoview.agent.loop import run_session
 from repoview.config import JUDGE_MODEL, MODEL_PRICING, OPENAI_MODEL, REPOS
-from repoview.db import get_connection, init_db
+from repoview.db import get_connection, get_repo_or_exit, init_db
 from repoview.embedding_client import OpenAIEmbeddingClient
 from repoview.eval_citations import extract_citations, matches_file, normalize_path
 from repoview.eval_judge import judge_case
@@ -213,10 +213,7 @@ def main() -> None:
         conn = get_connection()
         init_db(conn)
 
-        row = conn.execute("SELECT id FROM repo WHERE name = ?", (args.repo,)).fetchone()
-        if row is None:
-            raise SystemExit(f"{args.repo}가 인덱싱되지 않았습니다. 먼저 python -m repoview.index를 실행하세요.")
-        repo_id = row["id"]
+        repo_id = get_repo_or_exit(conn, args.repo)
 
         cases = list_eval_cases(conn, repo_id)
 

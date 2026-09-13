@@ -3,7 +3,7 @@
 import argparse
 import json
 
-from repoview.db import get_connection, init_db
+from repoview.db import get_connection, get_repo_or_exit, init_db
 
 
 def seed_eval_cases(conn, repo_id: int, cases: list[dict]) -> int:
@@ -49,14 +49,12 @@ def main() -> None:
     conn = get_connection()
     init_db(conn)
 
-    row = conn.execute("SELECT id FROM repo WHERE name = ?", (args.repo,)).fetchone()
-    if row is None:
-        raise SystemExit(f"{args.repo}가 인덱싱되지 않았습니다. 먼저 python -m repoview.index를 실행하세요.")
+    repo_id = get_repo_or_exit(conn, args.repo)
 
     with open(args.cases_file, encoding="utf-8") as f:
         cases = json.load(f)
 
-    count = seed_eval_cases(conn, row["id"], cases)
+    count = seed_eval_cases(conn, repo_id, cases)
     print(f"[완료] {args.repo}: {count}개 eval_case 시드 (건너뜀 {len(cases) - count}개)")
 
     conn.close()

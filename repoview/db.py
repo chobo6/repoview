@@ -110,6 +110,14 @@ def get_connection(db_path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+def get_repo_or_exit(conn: sqlite3.Connection, name: str) -> int:
+    """CLI가 --repo로 받은 이름을 repo_id로 바꾼다. eval.py/eval_seed.py가 공유."""
+    row = conn.execute("SELECT id FROM repo WHERE name = ?", (name,)).fetchone()
+    if row is None:
+        raise SystemExit(f"{name}가 인덱싱되지 않았습니다. 먼저 python -m repoview.index를 실행하세요.")
+    return row["id"]
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
     _migrate(conn)
