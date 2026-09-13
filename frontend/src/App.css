@@ -113,3 +113,19 @@ button {
   margin: 4px 0 0;
   padding-left: 20px;
 }
+
+.live-steps {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: #555;
+}
+
+.live-steps li {
+  padding: 4px 8px;
+  background: #f6f6f6;
+  border-radius: 4px;
+}

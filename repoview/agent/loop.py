@@ -38,6 +38,7 @@ def run_session(
     max_iterations: int | None = None,
     max_session_tokens: int | None = None,
     embedding_client=None,
+    session_id: int | None = None,
 ) -> SessionResult:
     limit = max_iterations if max_iterations is not None else MAX_ITERATIONS
     token_limit = max_session_tokens if max_session_tokens is not None else MAX_SESSION_TOKENS
@@ -49,7 +50,8 @@ def run_session(
     system_prompt = build_system_prompt(build_repo_overview(conn, repo_id))
     collection = _resolve_collection(repo["name"], embedding_client)
 
-    session_id = _create_session(conn, repo_id, question, model, phase)
+    if session_id is None:
+        session_id = _create_session(conn, repo_id, question, model, phase)
 
     step_no = 0
     totals = {"input": 0, "output": 0}
@@ -209,20 +211,16 @@ def _finish(
     totals: dict,
     error: str | None = None,
 ) -> SessionResult:
-    # 세션 상태 기록은 인용 검증과 완전히 분리한다 — 인용 검증(어드바이저리 기능)이
-    # 실패하거나 citation_warnings 기록 자체가 실패해도(예: 마이그레이션 누락) 이미
-    # 완료된 세션의 status/final_review는 항상 남아야 한다.
-    conn.execute(
-        """
-        UPDATE session
-        SET status = ?, final_review = ?, iteration_count = ?,
-            input_tokens = ?, output_tokens = ?, error = ?, finished_at = datetime('now')
-        WHERE id = ?
-        """,
-        (status, final_review, iteration, totals["input"], totals["output"], error, session_id),
-    )
-    conn.commit()
-
+    # 인용 검증/기록과 상태 UPDATE를 하나의 트랜잭션으로 묶는다 — 중간에
+    # conn.commit()을 하지 않고 맨 끝에 한 번만 커밋한다(_record_citation_warnings는
+    # 이제 자체 commit이 없다). 두 커밋으로 나뉘어 있으면 그 사이에 SSE 폴링이
+    # status만 반영된 순간을 관측하는 레이스가 생기고, 그 사이에 프로세스가 죽으면
+    # 이미 다 계산된 리뷰가 상태 미기록인 채 영원히 RUNNING에 남는 크래시 윈도우까지
+    # 생긴다 — 하나의 커밋으로 묶으면 둘 다 사라진다. 인용 검증/기록 자체가
+    # 실패해도(어드바이저리 기능, 예: 마이그레이션 누락) 그 예외는 여기서 잡히고,
+    # 뒤이은 status UPDATE는 같은(아직 커밋 안 된) 트랜잭션 안에서 정상적으로
+    # 실행된다 — SQLite는 한 statement의 오류만으로 트랜잭션 전체를 무효화하지
+    # 않으므로, status/final_review 커밋은 인용 실패와 무관하게 항상 뒤따른다.
     if final_review:
         try:
             warnings = verify_citations(conn, repo_id, session_id, final_review)
@@ -233,6 +231,17 @@ def _finish(
                 f"[경고] 인용 사후검증 실패 (session_id={session_id}): {type(exc).__name__}: {exc}",
                 file=sys.stderr,
             )
+
+    conn.execute(
+        """
+        UPDATE session
+        SET status = ?, final_review = ?, iteration_count = ?,
+            input_tokens = ?, output_tokens = ?, error = ?, finished_at = datetime('now')
+        WHERE id = ?
+        """,
+        (status, final_review, iteration, totals["input"], totals["output"], error, session_id),
+    )
+    conn.commit()
 
     return SessionResult(
         session_id=session_id,
@@ -245,8 +254,9 @@ def _finish(
 
 
 def _record_citation_warnings(conn, session_id: int, warnings: list[dict]) -> None:
+    # commit은 일부러 안 한다 — _finish의 상태 UPDATE와 한 트랜잭션으로 묶여
+    # 그쪽의 conn.commit() 한 번으로 같이 커밋된다.
     conn.execute(
         "UPDATE session SET citation_warnings = ? WHERE id = ?",
         (json.dumps(warnings, ensure_ascii=False), session_id),
     )
-    conn.commit()

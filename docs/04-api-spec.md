@@ -47,6 +47,7 @@ POST 요청에서 바로 에이전트를 실행하면, 프론트가 SSE를 연�
 `run_session`은 이미 스텝마다(`trace_step` 테이블) 즉시 commit하고 있어서, 이 커밋을 그대로 이벤트 소스로 재사용한다. `agent/loop.py`를 콜백 기반으로 뜯어고치는 대신, `GET /sessions/{id}/stream`이 `trace_step`을 0.2초 간격으로 폴링해 새 행을 이벤트로 변환하는 방식을 택했다 — `docs/05-agent-design.md` §8 참고.
 
 - **중복 실행 방지**: 연결 시 `UPDATE session SET status='RUNNING' WHERE id=? AND status='PENDING'`으로 원자적으로 선점한다. 이 UPDATE가 실제로 1행을 바꾼 연결만 백그라운드 실행(`asyncio.create_task(asyncio.to_thread(run_session, ...))`)을 시작한다 — 같은 세션에 여러 번 재연결해도 실행은 한 번만 된다.
+- **`run_session` 실패가 상태 기록으로 안 이어지는 경우의 안전망**: `run_session`은 보통 실패 시 스스로 `session.status`를 `FAILED`로 남기지만, 내부 try 블록에 들어가기도 전에 터지는 예외(레포 조회 실패 등)나 `run_session` 자체가 통째로 대체된 경우엔 아무도 상태를 못 바꾼다. 그러면 status가 영원히 `RUNNING`에 머물러 폴링이 끝나는 조건을 못 만나 무한 대기하게 된다 — `_run_in_background`가 `except` 블록에서 `WHERE status='RUNNING'`으로 한 번 더 `FAILED` 처리하는 안전망을 둔 이유다.
 - **탭을 닫아도 실행은 계속된다**: 백그라운드 실행은 SSE 연결의 생존 여부와 무관하게 진행된다(기존 동기식 동작과 같은 성격). 재연결하면 그 시점까지 쌓인 `trace_step`을 재생한 뒤 이어서 폴링한다.
 - **폴링/실행 각자 전용 sqlite 커넥션**을 연다(`Depends(get_db)` 미사용) — FastAPI의 `yield` 의존성이 스트리밍 응답 종료 전에 닫힐 수 있다는 함정을 피하기 위해서다. 두 커넥션이 같은 파일에 동시 접근하므로 `get_connection()`에 `PRAGMA busy_timeout = 5000`(5초)을 추가했다.
 - **트레이드오프**: 폴링 방식이라 `step_started`가 "지금 막 시작함"이 아니라 "완료된 걸 최대 0.2초 늦게 발견함"이 되어, 사실상 `step_completed`와 거의 동시에 발생한다. 진행 중 스피너 같은 진짜 실시간 표시는 못 만들지만, 로컬 단일 사용자 데모 도구 규모에서는 이 정도로 충분하다고 판단했다.
@@ -136,7 +137,7 @@ data: {"step_no": 3, "result_preview": "12 matches in 5 files...", "latency_ms":
 ## 4. 공통 규약
 
 - 에러 응답 형식: `{"error": {"code": "...", "message": "..."}}`
-- 상태 코드: `400` 잘못된 요청 / `404` 없는 레포·세션 / `409` 이미 실행 중인 세션 / `500` 서버 오류
+- 상태 코드: `400` 잘못된 요청 / `404` 없는 레포·세션 / `500` 서버 오류
 - 인증 없음 (로컬 단일 사용자)
 
 ## 5. 의도적으로 넣지 않은 것

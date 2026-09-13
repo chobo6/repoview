@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { createSession, fetchRepos, fetchSession } from './api'
+import { BASE_URL, createSession, fetchRepos, fetchSession } from './api'
 import EvalResults from './EvalResults'
 import './App.css'
 
@@ -20,6 +20,7 @@ function App() {
   const [session, setSession] = useState(null)
   const [error, setError] = useState(null)
   const [tab, setTab] = useState('ask')
+  const [liveSteps, setLiveSteps] = useState([])
 
   useEffect(() => {
     fetchRepos()
@@ -37,13 +38,40 @@ function App() {
     setLoading(true)
     setError(null)
     setSession(null)
+    setLiveSteps([])
 
     try {
       const created = await createSession(repoId, question)
-      setSession(await fetchSession(created.session_id))
+      const source = new EventSource(`${BASE_URL}/sessions/${created.session_id}/stream`)
+
+      source.addEventListener('step_started', (e) => {
+        const data = JSON.parse(e.data)
+        setLiveSteps((prev) => [...prev, `${data.tool_name}(${JSON.stringify(data.tool_args)})`])
+      })
+
+      source.addEventListener('assistant_message', (e) => {
+        const data = JSON.parse(e.data)
+        setLiveSteps((prev) => [...prev, data.text])
+      })
+
+      source.addEventListener('done', async () => {
+        source.close()
+        try {
+          setSession(await fetchSession(created.session_id))
+        } catch (err) {
+          setError(err.message)
+        } finally {
+          setLoading(false)
+        }
+      })
+
+      source.addEventListener('error', (e) => {
+        source.close()
+        setError(e.data ? JSON.parse(e.data).message : '스트림 연결이 끊어졌습니다')
+        setLoading(false)
+      })
     } catch (err) {
       setError(err.message)
-    } finally {
       setLoading(false)
     }
   }
@@ -85,6 +113,14 @@ function App() {
           </form>
 
           {error && <p className="error">{error}</p>}
+
+          {liveSteps.length > 0 && (
+            <ul className="live-steps">
+              {liveSteps.map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ul>
+          )}
 
           {session && (
             <section className="result">

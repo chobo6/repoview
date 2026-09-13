@@ -133,3 +133,10 @@ def test_eval_run_stat_columns_are_backfilled_from_notes(tmp_path):
     assert row["citation_accuracy"] == 1.0
     assert row["avg_cost_usd"] == 0.01
     assert row["avg_latency_ms"] == 1200
+
+
+def test_get_connection_sets_busy_timeout(tmp_path):
+    conn = get_connection(tmp_path / "busy.db")
+    value = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+    assert value == 5000
+    conn.close()
