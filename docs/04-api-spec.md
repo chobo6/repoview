@@ -81,7 +81,7 @@ data: {"step_no": 3, "result_preview": "12 matches in 5 files...", "latency_ms":
 | GET | `/evals/runs` | eval 실행 목록 — Phase별 탐지율 비교표의 데이터 소스. `?repo_id=` 필터, `started_at DESC` 정렬 |
 | GET | `/evals/runs/{id}` | 케이스별 상세 결과 (탐지 여부, 채점 근거, 해당 세션 링크) |
 
-실행 자체는 CLI(`python -m repoview.eval --phase 4`)로 하고 결과 조회만 API로 제공한다. 면접 데모에서 "Phase 2는 30%, Phase 4는 80%" 같은 비교표를 화면에 보여주는 것이 이 프로젝트의 하이라이트이므로 조회는 웹에 둔다.
+실행 자체는 CLI(`python -m repoview.eval --repo <name> --phase <2|3>`)로 하고 결과 조회만 API로 제공한다. 면접 데모에서 "Phase 2는 30%, Phase 3는 60%" 같은 비교표를 화면에 보여주는 것이 이 프로젝트의 하이라이트이므로 조회는 웹에 둔다.
 
 **같은 레포+Phase를 여러 번 돌린 기록을 숨기지 않는 이유**: 재실행할 때마다 LLM 응답 자체의 무작위성으로 탐지율이 흔들린다는 걸 실제로 겪었다(케이스 수가 적을수록 심함, `docs/TROUBLESHOOTING.md` #19 근처 참고). "최신 값만" 보여주면 이 변동성이 화면에서 사라져 수치를 실제보다 신뢰할 수 있는 것처럼 보이게 한다. 그래서 최신순 전체 이력을 그대로 보여주고, 값이 널뛰는 것 자체도 데모의 정직한 일부로 남긴다.
 
