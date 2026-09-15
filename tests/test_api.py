@@ -102,6 +102,37 @@ def test_create_session_stores_requested_model(client, conn):
     assert row["model"] == "qwen2.5:7b"
 
 
+def test_get_llm_builds_client_from_sessions_stored_model(conn, tmp_path):
+    """get_llm은 테스트에서 항상 override되므로 이 함수 자체의 DB 조회+build_llm
+    호출 로직은 다른 어떤 테스트도 실제로 실행하지 않는다 — 여기서 get_llm을
+    일반 함수로 직접 호출해 그 본문을 검증한다. db_path는 conn 픽스처가 쓰는
+    tmp_path/"test.db"와 동일해야 get_llm 내부의 별도 get_connection(db_path)이
+    지금 넣은 row를 볼 수 있다."""
+    repo_cursor = conn.execute(
+        "INSERT INTO repo (name, root_path) VALUES ('MiniRepo', '.')"
+    )
+    session_cursor = conn.execute(
+        "INSERT INTO session (repo_id, question, status, model, phase) "
+        "VALUES (?, 'q', 'PENDING', 'qwen2.5:7b', 3)",
+        (repo_cursor.lastrowid,),
+    )
+    conn.commit()
+    session_id = session_cursor.lastrowid
+
+    llm = get_llm(session_id, db_path=tmp_path / "test.db")
+
+    assert llm.model == "qwen2.5:7b"
+    assert "11434" in str(llm._client.base_url)
+
+
+def test_get_llm_falls_back_to_openai_model_when_session_missing(conn, tmp_path):
+    from repoview.config import OPENAI_MODEL
+
+    llm = get_llm(999999, db_path=tmp_path / "test.db")
+
+    assert llm.model == OPENAI_MODEL
+
+
 def test_get_session_includes_trace(conn, mini_repo, monkeypatch, tmp_path):
     import repoview.agent.loop as loop_module
 

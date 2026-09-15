@@ -227,7 +227,7 @@ def main() -> None:
     model = resolve_model(args.provider, args.model)
 
     try:
-        validate_judge_model(OPENAI_MODEL, JUDGE_MODEL)
+        validate_judge_model(model, JUDGE_MODEL)
 
         conn = get_connection()
         init_db(conn)
