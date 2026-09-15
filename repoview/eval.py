@@ -4,7 +4,7 @@ import sqlite3
 import sys
 import time
 
-from repoview.agent.llm import LLM, OpenAILLM
+from repoview.agent.llm import LLM, OpenAILLM, build_llm
 from repoview.agent.loop import run_session
 from repoview.config import JUDGE_MODEL, MODEL_PRICING, OPENAI_MODEL, REPOS
 from repoview.db import get_connection, get_repo_or_exit, init_db
@@ -198,6 +198,14 @@ def validate_judge_model(model: str, judge_model: str) -> None:
         )
 
 
+def resolve_model(provider: str, model: str | None) -> str:
+    if model:
+        return model
+    from repoview.config import OPENAI_MODEL
+
+    return "qwen2.5:7b" if provider == "ollama" else OPENAI_MODEL
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Phase별 리뷰 탐지율을 측정한다")
     parser.add_argument("--repo", required=True, choices=sorted(REPOS), help="평가할 레포 이름")
@@ -205,7 +213,18 @@ def main() -> None:
         "--phase", type=int, required=True, choices=[2, 3],
         help="평가할 Phase (2=키워드 검색만, 3=RAG 포함)",
     )
+    parser.add_argument(
+        "--provider", choices=["openai", "ollama"], default="openai",
+        help="평가 대상 LLM 제공자 (기본 openai)",
+    )
+    parser.add_argument(
+        "--model", default=None,
+        help="평가 대상 모델명. 생략 시 --provider openai는 OPENAI_MODEL, "
+             "--provider ollama는 qwen2.5:7b를 사용한다.",
+    )
     args = parser.parse_args()
+
+    model = resolve_model(args.provider, args.model)
 
     try:
         validate_judge_model(OPENAI_MODEL, JUDGE_MODEL)
@@ -217,13 +236,13 @@ def main() -> None:
 
         cases = list_eval_cases(conn, repo_id)
 
-        llm = OpenAILLM(model=OPENAI_MODEL)
+        llm = build_llm(model)
         judge_llm = OpenAILLM(model=JUDGE_MODEL)
         embedding_client = OpenAIEmbeddingClient() if args.phase == 3 else None
 
         stats = run_eval(
             conn, repo_id, cases, llm, judge_llm,
-            model=OPENAI_MODEL, phase=args.phase, embedding_client=embedding_client,
+            model=model, phase=args.phase, embedding_client=embedding_client,
         )
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
