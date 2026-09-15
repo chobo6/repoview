@@ -15,6 +15,12 @@ REPOS: dict[str, Path] = {
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "")
 
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+
+ALLOWED_MODELS: dict[str, str] = {"qwen2.5:7b": "ollama"}
+if OPENAI_MODEL:
+    ALLOWED_MODELS[OPENAI_MODEL] = "openai"
+
 MAX_ITERATIONS = int(os.getenv("REPOVIEW_MAX_ITERATIONS", "6"))
 MAX_SESSION_TOKENS = int(os.getenv("REPOVIEW_MAX_SESSION_TOKENS", "50000"))
 MAX_FILE_LINES = 200

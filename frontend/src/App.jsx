@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BASE_URL, createSession, fetchRepos, fetchSession } from './api'
+import { BASE_URL, createSession, fetchConfig, fetchRepos, fetchSession } from './api'
 import EvalResults from './EvalResults'
 import './App.css'
 
@@ -22,6 +22,8 @@ function App() {
   const [tab, setTab] = useState('ask')
   const [liveSteps, setLiveSteps] = useState([])
   const [costUsd, setCostUsd] = useState(null)
+  const [model, setModel] = useState('')
+  const [openaiModel, setOpenaiModel] = useState('')
 
   useEffect(() => {
     fetchRepos()
@@ -30,6 +32,9 @@ function App() {
         if (list.length > 0) setRepoId(list[0].id)
       })
       .catch((err) => setError(err.message))
+    fetchConfig()
+      .then((config) => setOpenaiModel(config.openai_model))
+      .catch(() => {})
   }, [])
 
   const handleSubmit = async (event) => {
@@ -43,7 +48,7 @@ function App() {
     setCostUsd(null)
 
     try {
-      const created = await createSession(repoId, question)
+      const created = await createSession(repoId, question, model)
       const source = new EventSource(`${BASE_URL}/sessions/${created.session_id}/stream`)
 
       source.addEventListener('step_started', (e) => {
@@ -114,6 +119,11 @@ function App() {
                     {repo.name} ({repo.primary_language}, {repo.file_count}개 파일)
                   </option>
                 ))}
+              </select>
+
+              <select value={model} onChange={(e) => setModel(e.target.value)}>
+                <option value="">OpenAI{openaiModel ? ` (${openaiModel})` : ''}</option>
+                <option value="qwen2.5:7b">Ollama 로컬 (qwen2.5:7b)</option>
               </select>
 
               <label htmlFor="question">무엇을 검토할까요?</label>

@@ -50,3 +50,12 @@ def test_max_iterations_default_is_six(reloaded_config):
 
 def test_max_session_tokens_default_is_fifty_thousand(reloaded_config):
     assert reloaded_config("REPOVIEW_MAX_SESSION_TOKENS").MAX_SESSION_TOKENS == 50_000
+
+
+def test_allowed_models_always_includes_qwen_ollama():
+    assert config.ALLOWED_MODELS.get("qwen2.5:7b") == "ollama"
+
+
+def test_allowed_models_excludes_empty_openai_model(reloaded_config):
+    reloaded = reloaded_config("OPENAI_MODEL")
+    assert "" not in reloaded.ALLOWED_MODELS

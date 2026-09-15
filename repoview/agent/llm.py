@@ -25,13 +25,16 @@ class LLM(Protocol):
 
 
 class OpenAILLM:
-    def __init__(self, model: str) -> None:
+    def __init__(self, model: str, base_url: str | None = None) -> None:
         if not model:
             raise ValueError("OPENAI_MODEL이 설정되지 않았습니다. .env를 확인하세요.")
         from openai import OpenAI
 
         self.model = model
-        self._client = OpenAI()
+        if base_url:
+            self._client = OpenAI(base_url=base_url, api_key="ollama")
+        else:
+            self._client = OpenAI()
 
     def call(self, messages: list[dict], tools: list[dict]) -> LLMResponse:
         kwargs: dict = {"model": self.model, "messages": messages}
@@ -58,6 +61,34 @@ class OpenAILLM:
             output_tokens=usage.completion_tokens if usage else 0,
             raw_message=message.model_dump(exclude_none=True),
         )
+
+
+def OllamaLLM(model: str) -> OpenAILLM:
+    """Ollama의 OpenAI 호환 엔드포인트(/v1/chat/completions)로 향하는 OpenAILLM을 만든다.
+    별도 클래스가 아닌 이유: 생성자 인자(base_url)만 다를 뿐 call()의 파싱·usage 집계
+    로직이 100% 동일해서 서브클래싱/재구현할 이유가 없다."""
+    from repoview.config import OLLAMA_BASE_URL
+
+    return OpenAILLM(model, base_url=OLLAMA_BASE_URL)
+
+
+def build_llm(model: str) -> "LLM":
+    """ALLOWED_MODELS 화이트리스트에 있는 모델명만 받는다 — 호출자(API/eval CLI)가
+    임의 모델명이나 base_url을 직접 지정하지 못하게 막는 지점이다.
+
+    ALLOWED_MODELS는 함수 본문에서 매번 다시 임포트한다(모듈 최상단에서 값으로
+    임포트하지 않는다) — repoview.config가 런타임에 리로드되는 경로(예: 테스트의
+    reloaded_config 픽스처)가 있는데, 최상단 임포트는 리로드 이전의 오래된 dict
+    객체를 계속 들고 있게 되어 리로드 후 값이 어긋날 수 있다. eval.py의
+    resolve_model이 이미 같은 이유로 이 패턴을 쓰고 있다."""
+    from repoview.config import ALLOWED_MODELS
+
+    provider = ALLOWED_MODELS.get(model)
+    if provider is None:
+        raise ValueError(f"허용되지 않은 모델입니다: {model}")
+    if provider == "ollama":
+        return OllamaLLM(model)
+    return OpenAILLM(model)
 
 
 def _parse_arguments(raw: str | None) -> dict:

@@ -1,7 +1,7 @@
 import pytest
 
 from repoview.agent.llm import FakeLLM, make_text_response
-from repoview.eval import estimate_cost_usd, list_eval_cases, run_eval, validate_judge_model
+from repoview.eval import estimate_cost_usd, list_eval_cases, main, resolve_model, run_eval, validate_judge_model
 from repoview.eval_seed import seed_eval_cases
 from repoview.indexer import index_repo
 
@@ -237,3 +237,32 @@ def test_validate_judge_model_passes_when_different():
 def test_validate_judge_model_raises_when_same():
     with pytest.raises(ValueError):
         validate_judge_model("gpt-4o", "gpt-4o")
+
+
+def test_resolve_model_defaults_to_qwen_for_ollama_provider():
+    assert resolve_model("ollama", None) == "qwen2.5:7b"
+
+
+def test_resolve_model_defaults_to_openai_model_for_openai_provider():
+    from repoview.config import OPENAI_MODEL
+
+    assert resolve_model("openai", None) == OPENAI_MODEL
+
+
+def test_resolve_model_respects_explicit_override():
+    assert resolve_model("ollama", "custom-model") == "custom-model"
+    assert resolve_model("openai", "custom-model") == "custom-model"
+
+
+def test_main_exits_on_explicit_provider_model_mismatch(monkeypatch):
+    """--provider와 --model을 둘 다 명시했는데 서로 다른 제공자를 가리키면(예:
+    --provider openai --model qwen2.5:7b) 조용히 --model이 가리키는 제공자로
+    흘러가는 대신 즉시 에러로 막아야 한다 — 그래야 반대 방향(로컬 모델인 줄 알고
+    실은 유료 OpenAI를 호출하는 것)의 비용 사고를 막을 수 있다."""
+    monkeypatch.setattr(
+        "sys.argv",
+        ["eval.py", "--repo", "LocalQuest", "--phase", "3",
+         "--provider", "openai", "--model", "qwen2.5:7b"],
+    )
+    with pytest.raises(SystemExit, match="서로 다른 제공자"):
+        main()
