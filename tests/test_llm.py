@@ -76,3 +76,21 @@ def test_build_llm_returns_plain_openai_client_for_openai_model(monkeypatch):
 def test_build_llm_raises_for_unknown_model():
     with pytest.raises(ValueError, match="허용되지 않은 모델"):
         build_llm("not-a-real-model")
+
+
+def test_build_llm_sees_reloaded_allowed_models(monkeypatch):
+    """ALLOWED_MODELS를 모듈 최상단에서 값으로 임포트하면 repoview.config가
+    런타임에 리로드돼도(예: OPENAI_MODEL 변경) build_llm은 예전 dict를 계속
+    들고 있어 새 모델을 거부한다 — 회귀 방지용."""
+    import importlib
+
+    from repoview import config
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-key")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-4o-mini-reloaded-test")
+    importlib.reload(config)
+    try:
+        llm = build_llm("gpt-4o-mini-reloaded-test")
+        assert llm.model == "gpt-4o-mini-reloaded-test"
+    finally:
+        importlib.reload(config)

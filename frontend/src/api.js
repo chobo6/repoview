@@ -1,5 +1,11 @@
 export const BASE_URL = 'http://localhost:8000/api'
 
+export async function fetchConfig() {
+  const response = await fetch(`${BASE_URL}/config`)
+  if (!response.ok) throw new Error('설정을 불러오지 못했습니다')
+  return response.json()
+}
+
 export async function fetchRepos() {
   const response = await fetch(`${BASE_URL}/repos`)
   if (!response.ok) throw new Error('레포 목록을 불러오지 못했습니다')

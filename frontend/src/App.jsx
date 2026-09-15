@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BASE_URL, createSession, fetchRepos, fetchSession } from './api'
+import { BASE_URL, createSession, fetchConfig, fetchRepos, fetchSession } from './api'
 import EvalResults from './EvalResults'
 import './App.css'
 
@@ -23,6 +23,7 @@ function App() {
   const [liveSteps, setLiveSteps] = useState([])
   const [costUsd, setCostUsd] = useState(null)
   const [model, setModel] = useState('')
+  const [openaiModel, setOpenaiModel] = useState('')
 
   useEffect(() => {
     fetchRepos()
@@ -31,6 +32,9 @@ function App() {
         if (list.length > 0) setRepoId(list[0].id)
       })
       .catch((err) => setError(err.message))
+    fetchConfig()
+      .then((config) => setOpenaiModel(config.openai_model))
+      .catch(() => {})
   }, [])
 
   const handleSubmit = async (event) => {
@@ -118,7 +122,7 @@ function App() {
               </select>
 
               <select value={model} onChange={(e) => setModel(e.target.value)}>
-                <option value="">OpenAI (gpt-4o)</option>
+                <option value="">OpenAI{openaiModel ? ` (${openaiModel})` : ''}</option>
                 <option value="qwen2.5:7b">Ollama 로컬 (qwen2.5:7b)</option>
               </select>
 

@@ -38,6 +38,14 @@ def _consume_stream(client, session_id, headers=None):
     return events, response
 
 
+def test_get_config_exposes_configured_openai_model(client):
+    from repoview.config import OPENAI_MODEL
+
+    response = client.get("/api/config")
+    assert response.status_code == 200
+    assert response.json() == {"openai_model": OPENAI_MODEL}
+
+
 def test_list_repos(client):
     response = client.get("/api/repos")
     assert response.status_code == 200
@@ -131,6 +139,57 @@ def test_get_llm_falls_back_to_openai_model_when_session_missing(conn, tmp_path)
     llm = get_llm(999999, db_path=tmp_path / "test.db")
 
     assert llm.model == OPENAI_MODEL
+
+
+def test_get_llm_returns_none_for_model_no_longer_allowed(conn, tmp_path):
+    """세션 생성 당시엔 허용됐던 모델이 재배포로 ALLOWED_MODELS에서 빠지면
+    build_llm이 ValueError를 던진다 — get_llm은 이를 삼키고 None을 반환해야
+    한다(그래야 이미 끝난 세션의 재연결이 이 실패로 500 나지 않는다)."""
+    repo_cursor = conn.execute(
+        "INSERT INTO repo (name, root_path) VALUES ('MiniRepo', '.')"
+    )
+    session_cursor = conn.execute(
+        "INSERT INTO session (repo_id, question, status, model, phase) "
+        "VALUES (?, 'q', 'PENDING', 'no-longer-allowed-model', 3)",
+        (repo_cursor.lastrowid,),
+    )
+    conn.commit()
+    session_id = session_cursor.lastrowid
+
+    assert get_llm(session_id, db_path=tmp_path / "test.db") is None
+
+
+def test_stream_reconnect_after_completion_survives_stale_model(conn, tmp_path):
+    """이미 COMPLETED된 세션의 model이 이후 ALLOWED_MODELS에서 빠져도(재배포로
+    OPENAI_MODEL이 바뀌는 시나리오), 재연결은 llm을 전혀 쓰지 않으므로 에러 없이
+    기존 결과를 그대로 재생해야 한다. get_llm을 오버라이드하지 않아 실제 구현이
+    실행되도록 한다."""
+    repo_cursor = conn.execute(
+        "INSERT INTO repo (name, root_path) VALUES ('MiniRepo', '.')"
+    )
+    session_cursor = conn.execute(
+        "INSERT INTO session "
+        "(repo_id, question, status, model, phase, final_review, iteration_count, "
+        "input_tokens, output_tokens) "
+        "VALUES (?, 'q', 'COMPLETED', 'no-longer-allowed-model', 3, '리뷰 결과', 1, 100, 50)",
+        (repo_cursor.lastrowid,),
+    )
+    conn.commit()
+    session_id = session_cursor.lastrowid
+
+    app.dependency_overrides[get_db] = lambda: conn
+    app.dependency_overrides[get_db_path] = lambda: tmp_path / "test.db"
+    app.dependency_overrides[get_embedding_client] = lambda: FakeEmbeddingClient()
+    try:
+        events, response = _consume_stream(TestClient(app), session_id)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    done_events = [payload for name, payload in events if name == "done"]
+    assert len(done_events) == 1
+    assert done_events[0]["status"] == "COMPLETED"
+    assert done_events[0]["final_review"] == "리뷰 결과"
 
 
 def test_get_session_includes_trace(conn, mini_repo, monkeypatch, tmp_path):

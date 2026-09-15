@@ -6,7 +6,7 @@ import time
 
 from repoview.agent.llm import LLM, OpenAILLM, build_llm
 from repoview.agent.loop import run_session
-from repoview.config import JUDGE_MODEL, MODEL_PRICING, OPENAI_MODEL, REPOS
+from repoview.config import ALLOWED_MODELS, JUDGE_MODEL, MODEL_PRICING, OPENAI_MODEL, REPOS
 from repoview.db import get_connection, get_repo_or_exit, init_db
 from repoview.embedding_client import OpenAIEmbeddingClient
 from repoview.eval_citations import extract_citations, matches_file, normalize_path
@@ -214,8 +214,8 @@ def main() -> None:
         help="평가할 Phase (2=키워드 검색만, 3=RAG 포함)",
     )
     parser.add_argument(
-        "--provider", choices=["openai", "ollama"], default="openai",
-        help="평가 대상 LLM 제공자 (기본 openai)",
+        "--provider", choices=["openai", "ollama"], default=None,
+        help="평가 대상 LLM 제공자 (기본: openai, 또는 --model이 가리키는 제공자로 자동 추정)",
     )
     parser.add_argument(
         "--model", default=None,
@@ -224,7 +224,15 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    model = resolve_model(args.provider, args.model)
+    model = resolve_model(args.provider or "openai", args.model)
+
+    if args.provider is not None and args.model is not None:
+        actual_provider = ALLOWED_MODELS.get(model)
+        if actual_provider is not None and actual_provider != args.provider:
+            raise SystemExit(
+                f"--provider {args.provider}와 --model {model}이(가) 서로 다른 제공자를 "
+                f"가리킵니다 (실제 제공자: {actual_provider}). 둘 중 하나를 빼거나 일치시키세요."
+            )
 
     try:
         validate_judge_model(model, JUDGE_MODEL)

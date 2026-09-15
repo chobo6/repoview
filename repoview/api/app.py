@@ -84,14 +84,24 @@ def get_llm(session_id: int, db_path: Path = Depends(get_db_path)):
     같아서 FastAPI가 자동으로 채워준다. 세션 생성 시 저장해둔 session.model을 읽어
     그 모델로 LLM을 구성한다 — 세션이 어떤 모델로 만들어졌든 실행도 항상 그 모델을
     쓰게 하기 위함이다. 테스트는 이 함수 자체를 완전히 교체(override)하므로
-    아래 구현이 바뀌어도 기존 테스트는 영향받지 않는다."""
+    아래 구현이 바뀌어도 기존 테스트는 영향받지 않는다.
+
+    build_llm이 실패해도(예: 재배포로 OPENAI_MODEL이 바뀌어 세션 저장 당시의
+    모델이 더 이상 ALLOWED_MODELS에 없는 경우) 여기서 예외를 던지지 않고 None을
+    반환한다 — 이 의존성은 재연결(reconnect)마다 매번 실행되는데, 이미 끝난
+    세션을 조용히 재생만 하면 되는 요청까지 이 실패 때문에 500 에러가 나면 안
+    되기 때문이다. 실제로 새 실행을 시작해야 하는 경우(claim.rowcount == 1)에만
+    stream_session이 None을 확인해 에러 처리한다."""
     conn = get_connection(db_path)
     try:
         row = conn.execute("SELECT model FROM session WHERE id = ?", (session_id,)).fetchone()
     finally:
         conn.close()
     model = row["model"] if row else OPENAI_MODEL
-    return build_llm(model)
+    try:
+        return build_llm(model)
+    except ValueError:
+        return None
 
 
 def get_embedding_client():
@@ -106,6 +116,14 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     return _error_response(422, "요청 형식이 올바르지 않습니다")
+
+
+@app.get("/api/config")
+def get_config() -> dict:
+    """프론트엔드가 모델 선택 드롭다운에 실제 설정값을 보여주기 위해 쓴다 —
+    라벨을 하드코딩하면 운영자가 .env의 OPENAI_MODEL을 바꿔도(예: 비용 절감을
+    위해 gpt-4o-mini로) 화면엔 다른 모델을 쓰는 것처럼 보인다."""
+    return {"openai_model": OPENAI_MODEL}
 
 
 @app.get("/api/repos")
@@ -208,6 +226,9 @@ async def stream_session(
         raise
 
     if claim.rowcount == 1:
+        if llm is None:
+            conn.close()
+            raise HTTPException(status_code=500, detail=f"허용되지 않은 모델입니다: {row['model']}")
         task = asyncio.create_task(
             asyncio.to_thread(
                 _run_in_background,
