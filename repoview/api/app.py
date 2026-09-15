@@ -10,10 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from repoview.agent.llm import OpenAILLM
+from repoview.agent.llm import build_llm
 from repoview.agent.loop import run_session
 from repoview.agent.prompts import build_repo_overview
-from repoview.config import CURRENT_PHASE, DB_PATH, OPENAI_MODEL
+from repoview.config import ALLOWED_MODELS, CURRENT_PHASE, DB_PATH, OPENAI_MODEL
 from repoview.db import get_connection, init_db
 from repoview.embedding_client import OpenAIEmbeddingClient
 from repoview.eval import estimate_cost_usd
@@ -63,6 +63,7 @@ app.add_middleware(
 class SessionRequest(BaseModel):
     repo_id: int
     question: str
+    model: str | None = None
 
 
 def get_db():
@@ -74,16 +75,27 @@ def get_db():
         conn.close()
 
 
-def get_llm():
-    return OpenAILLM(OPENAI_MODEL)
+def get_db_path() -> Path:
+    return DB_PATH
+
+
+def get_llm(session_id: int, db_path: Path = Depends(get_db_path)):
+    """session_id는 이 함수를 쓰는 라우트(stream_session)의 경로 파라미터와 이름이
+    같아서 FastAPI가 자동으로 채워준다. 세션 생성 시 저장해둔 session.model을 읽어
+    그 모델로 LLM을 구성한다 — 세션이 어떤 모델로 만들어졌든 실행도 항상 그 모델을
+    쓰게 하기 위함이다. 테스트는 이 함수 자체를 완전히 교체(override)하므로
+    아래 구현이 바뀌어도 기존 테스트는 영향받지 않는다."""
+    conn = get_connection(db_path)
+    try:
+        row = conn.execute("SELECT model FROM session WHERE id = ?", (session_id,)).fetchone()
+    finally:
+        conn.close()
+    model = row["model"] if row else OPENAI_MODEL
+    return build_llm(model)
 
 
 def get_embedding_client():
     return OpenAIEmbeddingClient()
-
-
-def get_db_path() -> Path:
-    return DB_PATH
 
 
 @app.exception_handler(HTTPException)
@@ -123,9 +135,13 @@ def create_session(
     if repo is None:
         raise HTTPException(status_code=404, detail=f"레포를 찾을 수 없습니다: {payload.repo_id}")
 
+    model = payload.model or OPENAI_MODEL
+    if model not in ALLOWED_MODELS:
+        raise HTTPException(status_code=400, detail=f"허용되지 않은 모델입니다: {model}")
+
     cursor = conn.execute(
         "INSERT INTO session (repo_id, question, status, model, phase) VALUES (?, ?, 'PENDING', ?, ?)",
-        (payload.repo_id, question, OPENAI_MODEL, CURRENT_PHASE),
+        (payload.repo_id, question, model, CURRENT_PHASE),
     )
     conn.commit()
     return {"session_id": int(cursor.lastrowid), "status": "PENDING"}

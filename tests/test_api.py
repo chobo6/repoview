@@ -84,6 +84,24 @@ def test_create_session_with_blank_question_returns_400(client):
     assert response.status_code == 400
 
 
+def test_create_session_rejects_unknown_model(client):
+    repo_id = client.get("/api/repos").json()[0]["id"]
+    response = client.post(
+        "/api/sessions", json={"repo_id": repo_id, "question": "질문", "model": "not-a-real-model"}
+    )
+    assert response.status_code == 400
+
+
+def test_create_session_stores_requested_model(client, conn):
+    repo_id = client.get("/api/repos").json()[0]["id"]
+    response = client.post(
+        "/api/sessions", json={"repo_id": repo_id, "question": "질문", "model": "qwen2.5:7b"}
+    )
+    session_id = response.json()["session_id"]
+    row = conn.execute("SELECT model FROM session WHERE id = ?", (session_id,)).fetchone()
+    assert row["model"] == "qwen2.5:7b"
+
+
 def test_get_session_includes_trace(conn, mini_repo, monkeypatch, tmp_path):
     import repoview.agent.loop as loop_module
 

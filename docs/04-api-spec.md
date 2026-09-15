@@ -33,7 +33,7 @@ Base URL: `http://localhost:8000/api`
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| POST | `/sessions` | 세션 생성. body `{repo_id, question}` → `{session_id, status: "PENDING"}` |
+| POST | `/sessions` | 세션 생성. body `{repo_id, question, model?}` → `{session_id, status: "PENDING"}`. `model` 생략 시 `OPENAI_MODEL`. 허용 목록(`docs/07-local-llm-provider.md`)에 없는 모델이면 400. |
 | GET | `/sessions/{id}/stream` | SSE. 연결 시점에 에이전트 실행 시작, 스텝을 실시간 전송 |
 | GET | `/sessions` | 과거 세션 목록 (`?repo_id=&phase=` 필터) |
 | GET | `/sessions/{id}` | 세션 상세 + 전체 트레이스 (재생용) |
