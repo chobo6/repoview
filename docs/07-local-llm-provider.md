@@ -92,10 +92,21 @@ python -m repoview.eval --repo <name> --phase <2|3> [--provider openai|ollama] [
 
 현재 `get_llm()`은 앱 전역에 고정된 `Depends`라서 요청마다 다른 모델을 만들 수 없다 — 게다가 실행 시점(`stream_session`)은 이미 `row["model"]`(세션 생성 시 저장된 값)을 읽어서 `_run_in_background`에 넘기고 있으면서도, 정작 `llm` 객체는 이 값과 무관하게 `Depends(get_llm)`이 고정으로 만든 걸 그대로 쓰고 있다 — 지금은 모델이 하나뿐이라 드러나지 않았을 뿐인 기존 불일치다. 이번 변경으로 이것도 함께 바로잡는다:
 
-- `create_session`: `payload.model`(기본값 `OPENAI_MODEL`)을 `ALLOWED_MODELS`로 검증해 `session.model`에 저장 (기존과 동일한 지점, 값만 동적으로 바뀜).
-- `stream_session`: `Depends(get_llm)`을 제거하고, `row["model"]`(DB에서 읽은, 이미 검증된 값)로 `build_llm(row["model"])`을 호출해 실행용 `llm`을 만든다. 이러면 세션이 생성될 때 정한 모델과 실제로 실행에 쓰이는 모델이 항상 일치한다.
+- `create_session`: `payload.model`(기본값 `OPENAI_MODEL`)이 `ALLOWED_MODELS`에 없으면 `HTTPException(status_code=400, detail=...)`을 던진다(기존 "레포를 찾을 수 없습니다" 등과 동일한 패턴 — 이 프로젝트는 검증 실패를 `_error_response`를 직접 호출하지 않고 `HTTPException`으로 던져 등록된 핸들러가 변환하게 한다). 유효하면 `session.model`에 저장.
+- `stream_session`: **`get_llm` 의존성 함수는 삭제하지 않고 유지한다** — 기존 테스트(`tests/test_api.py`)가 `app.dependency_overrides[get_llm] = lambda: FakeLLM(...)`로 완전히 교체하는 방식으로 이미 여러 곳에서 쓰고 있어서, 이 시그니처를 없애면 기존 테스트가 전부 깨진다(Global Constraint 위반). 대신 `get_llm`의 **기본(운영) 구현만** 바꾼다 — 라우트의 `session_id` 경로 파라미터를 그대로 받아 DB에서 `model`을 조회한 뒤 `build_llm(model)`을 반환하도록 한다:
 
-`get_llm` 의존성 함수 자체는 삭제한다(더 이상 쓰이지 않음).
+  ```python
+  def get_llm(session_id: int, db_path: Path = Depends(get_db_path)):
+      conn = get_connection(db_path)
+      try:
+          row = conn.execute("SELECT model FROM session WHERE id = ?", (session_id,)).fetchone()
+      finally:
+          conn.close()
+      model = row["model"] if row else OPENAI_MODEL
+      return build_llm(model)
+  ```
+
+  테스트는 이 함수를 완전히 교체(override)하므로 내부 구현 변경의 영향을 받지 않는다. 세션 조회를 위해 짧은 연결을 하나 더 여는 점(경량 PK 조회 1건)은 감수한다 — `stream_session` 본문이 어차피 곧이어 같은 세션 row를 다시 읽지만, 이 중복 조회를 없애려고 `get_llm`의 의존성 주입 구조 자체를 바꾸면(예: 다른 의존성 결과를 참조하게 만들면) 기존 테스트의 override 지점이 흔들릴 위험이 더 크다고 판단했다.
 
 ## 6. 프론트엔드
 
