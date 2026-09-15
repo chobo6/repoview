@@ -22,6 +22,7 @@ function App() {
   const [tab, setTab] = useState('ask')
   const [liveSteps, setLiveSteps] = useState([])
   const [costUsd, setCostUsd] = useState(null)
+  const [model, setModel] = useState('')
 
   useEffect(() => {
     fetchRepos()
@@ -43,7 +44,7 @@ function App() {
     setCostUsd(null)
 
     try {
-      const created = await createSession(repoId, question)
+      const created = await createSession(repoId, question, model)
       const source = new EventSource(`${BASE_URL}/sessions/${created.session_id}/stream`)
 
       source.addEventListener('step_started', (e) => {
@@ -114,6 +115,11 @@ function App() {
                     {repo.name} ({repo.primary_language}, {repo.file_count}개 파일)
                   </option>
                 ))}
+              </select>
+
+              <select value={model} onChange={(e) => setModel(e.target.value)}>
+                <option value="">OpenAI (gpt-4o)</option>
+                <option value="qwen2.5:7b">Ollama 로컬 (qwen2.5:7b)</option>
               </select>
 
               <label htmlFor="question">무엇을 검토할까요?</label>

@@ -6,21 +6,24 @@ export async function fetchRepos() {
   return response.json()
 }
 
-export async function createSession(repoId, question) {
+export async function createSession(repoId, question, model) {
+  const body = { repo_id: repoId, question }
+  if (model) body.model = model
+
   const response = await fetch(`${BASE_URL}/sessions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ repo_id: repoId, question }),
+    body: JSON.stringify(body),
   })
-  let body
+  let responseBody
   try {
-    body = await response.json()
+    responseBody = await response.json()
   } catch {
     if (!response.ok) throw new Error('요청이 실패했습니다')
     throw new Error('응답을 해석하지 못했습니다')
   }
-  if (!response.ok) throw new Error(body.error?.message ?? '요청이 실패했습니다')
-  return body
+  if (!response.ok) throw new Error(responseBody.error?.message ?? '요청이 실패했습니다')
+  return responseBody
 }
 
 export async function fetchSession(sessionId) {
